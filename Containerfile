@@ -725,9 +725,9 @@ RUN CUDA_VERSION_DASH=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr '.' '-') && \
         # SM120 integration: nvrtc.h headers (the -dev pkg), not just the libnvrtc.so runtime.
         # Upstream ships only cuda-nvrtc here — fine for binding-based JIT — but
         # FlashInfer's DeepGEMM cutlass fp4 MoE backend nvcc-compiles a .cu that
-        # `#include <nvrtc.h>`. Upstream never hits that path (it relies on prebuilt
-        # flashinfer cubins for sm_90/sm_100); THIS image drops the cubin cache AND
-        # targets sm_120, so it JITs that kernel and needs the header. Without it:
+        # `#include <nvrtc.h>`. Upstream never hits that path with its prebuilt
+        # cache; THIS image omits the JIT cache so source-patched profiles compile
+        # the same sources, and targets sm_120, so it needs the header. Without it:
         # "fatal error: nvrtc.h: No such file or directory" -> TP worker dies at
         # warmup (verified on Step-3.7-Flash-NVFP4, vllm-e, 2026-06-24). With it, the
         # fp4 JIT builds and the VLLM_TEST_FORCE_FP8_MARLIN/VLLM_DISABLED_KERNELS
@@ -817,7 +817,7 @@ COPY requirements/cuda.txt /tmp/requirements-cuda.txt
 # leaving base files that break CUDA 13 CuTe DSL JIT.
 # TODO(mmangkad): Remove this after NVIDIA/cutlass#3259 is fixed.
 #
-# SM120 integration: bump flashinfer-python 0.6.13 -> 0.6.14 in the pin before installing.
+# SM120 integration: bump the FlashInfer Python and cubin pins to 0.6.14 before installing.
 # vLLM main since #43477 (the SM120 DSv4 enablement, 2026-06-23) calls
 # flashinfer.mla trtllm_batch_decode_sparse_mla_dsv4(..., swa_topk_lens=...),
 # an argument that ONLY exists in flashinfer >= 0.6.14 (added in
@@ -831,25 +831,20 @@ COPY requirements/cuda.txt /tmp/requirements-cuda.txt
 # after the sed so we fail loudly if upstream jumps PAST it (e.g. 0.6.15 —
 # re-verify swa_topk_lens compat then).
 #
-# Only flashinfer-PYTHON is bumped; flashinfer-cubin stays at upstream's 0.6.13.
-# flashinfer published only flashinfer-python==0.6.14 to PyPI — flashinfer-cubin
-# has NO 0.6.14 (its latest is 0.6.13, verified 2026-07-14), so pinning cubin to
-# 0.6.14 makes uv's resolve unsatisfiable and the build dies. The swa_topk_lens
-# fix is a Python-wrapper change (flashinfer/mla/_core.py); the cubin package is a
-# separate, optional set of pre-compiled sm_90/sm_100 cubins that this sm_120-only
-# runtime-JIT image doesn't use, and flashinfer-python has no hard dep on it. The
-# resulting python(0.6.14)/cubin(0.6.13) mismatch trips a hard RuntimeError in
-# flashinfer/jit/env.py at import; FLASHINFER_DISABLE_VERSION_CHECK=1 (set in
-# vllm-base below) bypasses it. Self-cleans once flashinfer-cubin 0.6.14 ships and
-# upstream realigns both pins (then drop that env too).
+# PyPI publishes flashinfer-python 0.6.14 but stops at flashinfer-cubin 0.6.13.
+# FlashInfer's official top-level index publishes the matching 0.6.14 cubin, so
+# add that index to the resolver and keep the installed package versions aligned.
 RUN --mount=type=cache,target=/opt/uv/cache \
     if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "12" ]; then \
         sed -i 's/^nvidia-cutlass-dsl\[cu13\]/nvidia-cutlass-dsl/' /tmp/requirements-cuda.txt; \
         sed -i 's/^humming-kernels\[cu13\]/humming-kernels[cu12]/' /tmp/requirements-cuda.txt; \
     fi && \
     sed -i 's/^flashinfer-python==0\.6\.13/flashinfer-python==0.6.14/' /tmp/requirements-cuda.txt && \
+    sed -i 's/^flashinfer-cubin==0\.6\.13/flashinfer-cubin==0.6.14/' /tmp/requirements-cuda.txt && \
     grep -q '^flashinfer-python==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.14 after sed — upstream moved the pin; re-verify swa_topk_lens compat before adjusting"; exit 1; } && \
+    grep -q '^flashinfer-cubin==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.14 after sed — upstream moved the pin; re-verify the package indexes before adjusting"; exit 1; } && \
     uv pip install --system -r /tmp/requirements-cuda.txt \
+        --index https://flashinfer.ai/whl \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
     if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "13" ]; then \
         CUTLASS_DSL_VERSION=$(uv pip show --system nvidia-cutlass-dsl 2>/dev/null | awk '/^Version:/{print $2}') && \
@@ -860,25 +855,15 @@ RUN --mount=type=cache,target=/opt/uv/cache \
     fi && \
     rm /tmp/requirements-cuda.txt /tmp/common.txt
 
-# SM120 integration: flashinfer-python is pinned to 0.6.14 (DSv4 SM120 swa_topk_lens, see the
-# sed above) but flashinfer-cubin has no 0.6.14 on PyPI (latest 0.6.13, checked
-# 2026-07-14), so the two versions intentionally differ. flashinfer/jit/env.py
-# hard-raises a RuntimeError at import when they mismatch; bypass it — the
-# pre-staged cubins target sm_90/sm_100 and are unused on this sm_120-only
-# runtime-JIT image (checksummed cubins are fetched/JIT'd at runtime as needed).
-# Set here in vllm-base so every downstream runtime stage inherits it. Remove once
-# flashinfer-cubin 0.6.14 ships and the pins realign.
-ENV FLASHINFER_DISABLE_VERSION_CHECK=1
-
 # SM120 integration: SKIP upstream's flashinfer-jit-cache install (upstream pins 0.6.13 here).
-# It pulls a prebuilt JIT cache from a CUDA-version-specific index
-# (https://flashinfer.ai/whl/cuXXX). The cu130 index has no 0.6.14 package and a
-# cu133 index is not published (re-verified 2026-07-14), so installing a cache
-# matching this Python/CUDA stack cannot resolve. We rely on flashinfer's
-# runtime JIT instead, restricted to sm_120 via
+# The official cu130 index contains a 0.6.14 cache, but no cu133 index is
+# published for this CUDA 13.3 image. Keep the cache omitted across every build
+# profile; this also ensures profiles that patch FlashInfer kernel sources use
+# the same runtime-JIT path instead of selecting a prebuilt unpatched module.
+# Runtime JIT is restricted to sm_120 via
 # `ENV FLASHINFER_CUDA_ARCH_LIST=12.0f` (set below); kernels compile on first
-# use and are cached to disk thereafter. flashinfer-python / -cubin still
-# install normally from PyPI via the requirements above.
+# use and are cached to disk thereafter. The Python and cubin packages remain
+# version-matched; the cubin is resolved from FlashInfer's official index.
 # https://docs.flashinfer.ai/installation.html
 
 # ============================================================
@@ -982,22 +967,27 @@ RUN --mount=type=cache,target=/opt/uv/cache \
         fi; \
     fi
 
-# SM120 integration: RE-PIN flashinfer-python to 0.6.14 (DSv4 SM120 swa_topk_lens). The earlier
-# sed bumps it in /tmp/requirements-cuda.txt, but that only patches the throwaway copy
+# SM120 integration: RE-PIN FlashInfer Python and cubin to 0.6.14. The earlier
+# sed bumps them in /tmp/requirements-cuda.txt, but that only patches the throwaway copy
 # used for the standalone requirements install — NOT the vLLM source tree the wheel is
-# built from. vLLM's own requirements/cuda.txt pins flashinfer-python==0.6.13, so that
-# pin is baked into the wheel's dependency metadata; `uv pip install dist/*.whl` (and
-# the ep-kernels install) then re-resolve and DOWNGRADE flashinfer-python 0.6.14 -> 0.6.13,
-# silently reverting the bump. The image then still crashes at memory-profiling with
+# built from. vLLM's own requirements/cuda.txt pins both packages at 0.6.13, so those
+# pins are baked into the wheel's dependency metadata; `uv pip install dist/*.whl` (and
+# the ep-kernels install) can then re-resolve and downgrade the 0.6.14 packages,
+# silently reverting the bump. A downgraded Python package crashes at memory-profiling with
 # "trtllm_batch_decode_sparse_mla_dsv4() got an unexpected keyword argument 'swa_topk_lens'"
-# (verified vllm-c 2026-07-08, flashinfer-python=0.6.13 in the shipped image). Force it
-# back here, AFTER every install that could re-resolve it; --no-deps so it drags nothing
-# else. cubin stays 0.6.13 (no 0.6.14 on PyPI) + FLASHINFER_DISABLE_VERSION_CHECK=1 above.
-# Self-cleans once upstream pins 0.6.14: --force-reinstall to the same version is a no-op.
+# (verified vllm-c 2026-07-08, flashinfer-python=0.6.13 in the shipped image). Force
+# both packages back here, AFTER every install that could re-resolve them; --no-deps so
+# this drags nothing else. The matching cubin comes from FlashInfer's official
+# index because PyPI does not publish cubin 0.6.14. These installs become no-ops
+# once upstream pins the same release and sources both packages there.
 RUN --mount=type=cache,target=/opt/uv/cache \
-    uv pip install --system --force-reinstall --no-deps flashinfer-python==0.6.14 && \
-    INSTALLED=$(uv pip show --system flashinfer-python 2>/dev/null | awk '/^Version:/{print $2}') && \
-    [ "$INSTALLED" = "0.6.14" ] || { echo "FATAL: flashinfer-python is $INSTALLED, expected 0.6.14 after force-reinstall"; exit 1; }
+    uv pip install --system --force-reinstall --no-deps \
+        --index https://flashinfer.ai/whl \
+        flashinfer-python==0.6.14 flashinfer-cubin==0.6.14 && \
+    PYTHON_VERSION_INSTALLED=$(uv pip show --system flashinfer-python 2>/dev/null | awk '/^Version:/{print $2}') && \
+    CUBIN_VERSION_INSTALLED=$(uv pip show --system flashinfer-cubin 2>/dev/null | awk '/^Version:/{print $2}') && \
+    [ "$PYTHON_VERSION_INSTALLED" = "0.6.14" ] || { echo "FATAL: flashinfer-python is $PYTHON_VERSION_INSTALLED, expected 0.6.14 after force-reinstall"; exit 1; } && \
+    [ "$CUBIN_VERSION_INSTALLED" = "0.6.14" ] || { echo "FATAL: flashinfer-cubin is $CUBIN_VERSION_INSTALLED, expected 0.6.14 after force-reinstall"; exit 1; }
 
 # SM120 integration: optionally carry up to three open FlashInfer PRs and one resolver
 # fix as source patches on the installed 0.6.14 wheel. The build profile stages

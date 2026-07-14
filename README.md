@@ -95,14 +95,14 @@ MAX_JOBS=48 ./scripts/build.sh agentic-mtp0 local/dsv4-sm120:agentic-mtp0
 The image records the vLLM revision, repository revision, profile, and SHA256
 of every selected patch in OCI labels and environment variables.
 
-### Current FlashInfer packaging constraint
+### FlashInfer package selection
 
-As of this lock, `flashinfer-python==0.6.14` is published but
-`flashinfer-cubin` remains at `0.6.13`. No `0.6.14` JIT-cache package is listed
-on the official CUDA 13.0 index, and no CUDA 13.3 index is published. The image
-therefore retains the tested 0.6.13 cubin, disables the package-version check,
-skips the unavailable cache, and JIT compiles the SM120 paths from the patched
-0.6.14 source package.
+The image installs matched `flashinfer-python==0.6.14` and
+`flashinfer-cubin==0.6.14`; the cubin comes from FlashInfer's official index
+because PyPI stops at 0.6.13. The official CUDA 13.0 index contains a 0.6.14
+JIT-cache package, but a CUDA 13.3 index is not currently published. This CUDA
+13.3 image therefore omits the JIT cache; keeping that omission across profiles
+also makes control and source-patched images exercise the same runtime-JIT path.
 
 ## Scope
 

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generated_at": "2026-07-14T18:33:58Z",
+  "generated_at": "2026-07-14T19:49:11Z",
   "vllm": {
     "repository": "https://github.com/vllm-project/vllm",
     "base_commit": "cdaa40d2a8c9297349669fc6e7db6dcb282df0b8",
@@ -14,7 +14,7 @@
   "flashinfer": {
     "repository": "https://github.com/flashinfer-ai/flashinfer",
     "package_base": "flashinfer-python==0.6.14",
-    "package_cubin": "flashinfer-cubin==0.6.13",
+    "package_cubin": "flashinfer-cubin==0.6.14",
     "pull_requests": {
       "3817": "76fd3daf7064b73924ebb3bcb1e93a8a26fc6da9",
       "3834": "0c5fda59bb6fa71eae875693a024bb0fb37ba7d6",

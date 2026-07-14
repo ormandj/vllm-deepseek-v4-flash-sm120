@@ -17,15 +17,18 @@ done
 
 python3 -m pip download \
   --dest "$work/wheel" \
+  --index-url https://flashinfer.ai/whl \
   --platform manylinux_2_28_x86_64 \
   --python-version 312 \
   --only-binary=:all: \
   --no-deps \
-  flashinfer-python==0.6.14
-wheels=("$work"/wheel/*.whl)
-python3 -m zipfile -e "${wheels[0]}" "$work/site"
+  flashinfer-python==0.6.14 \
+  flashinfer-cubin==0.6.14
+python_wheels=("$work"/wheel/flashinfer_python-*.whl)
+[[ ${#python_wheels[@]} -eq 1 ]]
+python3 -m zipfile -e "${python_wheels[0]}" "$work/site"
 for patch_file in "$repo"/patches/flashinfer/*.patch; do
   patch -p1 -d "$work/site" --forward --no-backup-if-mismatch < "$patch_file"
 done
 
-echo "all profiles apply cleanly to $vllm_commit and flashinfer-python 0.6.14"
+echo "all profiles apply cleanly to $vllm_commit and matched FlashInfer 0.6.14 packages"
