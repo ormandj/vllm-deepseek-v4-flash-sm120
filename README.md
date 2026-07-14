@@ -95,6 +95,13 @@ MAX_JOBS=48 ./scripts/build.sh agentic-mtp0 local/dsv4-sm120:agentic-mtp0
 The image records the vLLM revision, repository revision, profile, and SHA256
 of every selected patch in OCI labels and environment variables.
 
+The vLLM carries in this repository change Python only. Builds therefore use
+vLLM's official precompiled native wheel from the exact pinned vLLM commit and
+package the patched Python source around those same-commit binaries. The native
+wheel commit and metadata URL are pinned in `stack.lock.json` and recorded in
+the image metadata. This avoids recompiling unchanged CUDA extensions on an
+ephemeral hosted runner; it is not a cross-commit binary substitution.
+
 ### FlashInfer package selection
 
 The image installs matched `flashinfer-python==0.6.14` and

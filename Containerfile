@@ -1175,6 +1175,7 @@ ARG TARGETPLATFORM
 ARG INSTALL_KV_CONNECTORS=false
 ARG CUDA_VERSION
 ARG VLLM_BUILD_COMMIT
+ARG VLLM_NATIVE_WHEEL_COMMIT=unknown
 ARG VLLM_BUILD_PIPELINE
 ARG VLLM_BUILD_URL
 ARG VLLM_IMAGE_TAG
@@ -1241,6 +1242,7 @@ RUN if [ "$INSTALL_KV_CONNECTORS" = "true" ]; then \
 
 ENV VLLM_USAGE_SOURCE production-docker-image
 ENV VLLM_BUILD_COMMIT=${VLLM_BUILD_COMMIT:-unknown} \
+    VLLM_NATIVE_WHEEL_COMMIT=${VLLM_NATIVE_WHEEL_COMMIT} \
     VLLM_BUILD_PIPELINE=${VLLM_BUILD_PIPELINE:-local} \
     VLLM_BUILD_URL=${VLLM_BUILD_URL:-} \
     VLLM_IMAGE_TAG=${VLLM_IMAGE_TAG:-local/vllm-openai:dev} \
@@ -1252,6 +1254,7 @@ LABEL org.opencontainers.image.source="${INTEGRATION_SOURCE}" \
       org.opencontainers.image.version="${VLLM_IMAGE_TAG}" \
       org.opencontainers.image.url="${VLLM_BUILD_URL}" \
       ai.vllm.upstream.commit="${VLLM_BUILD_COMMIT}" \
+      ai.vllm.native-wheel.commit="${VLLM_NATIVE_WHEEL_COMMIT}" \
       ai.vllm.integration.commit="${INTEGRATION_BUILD_COMMIT}" \
       ai.vllm.build.pipeline="${VLLM_BUILD_PIPELINE}" \
       ai.vllm.build.url="${VLLM_BUILD_URL}" \

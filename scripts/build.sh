@@ -23,6 +23,7 @@ fi
 max_jobs=${MAX_JOBS:-$detected_jobs}
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 vllm_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["base_commit"])')
+native_wheel_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["native_wheel_commit"])')
 integration_commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || printf unknown)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -61,7 +62,10 @@ done
   --build-arg max_jobs="$max_jobs" \
   --build-arg nvcc_threads="${NVCC_THREADS:-1}" \
   --build-arg SECURITY_REFRESH="$(date +%Y%m%d)" \
+  --build-arg VLLM_USE_PRECOMPILED=1 \
+  --build-arg VLLM_MERGE_BASE_COMMIT="$native_wheel_commit" \
   --build-arg VLLM_BUILD_COMMIT="$vllm_commit" \
+  --build-arg VLLM_NATIVE_WHEEL_COMMIT="$native_wheel_commit" \
   --build-arg VLLM_BUILD_PIPELINE="${BUILD_PIPELINE:-local}" \
   --build-arg VLLM_BUILD_URL="${BUILD_URL:-https://github.com/ormandj/vllm-deepseek-v4-flash-sm120}" \
   --build-arg VLLM_IMAGE_TAG="$image" \

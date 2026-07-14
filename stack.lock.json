@@ -4,6 +4,8 @@
   "vllm": {
     "repository": "https://github.com/vllm-project/vllm",
     "base_commit": "cdaa40d2a8c9297349669fc6e7db6dcb282df0b8",
+    "native_wheel_commit": "cdaa40d2a8c9297349669fc6e7db6dcb282df0b8",
+    "native_wheel_metadata": "https://wheels.vllm.ai/cdaa40d2a8c9297349669fc6e7db6dcb282df0b8/vllm/metadata.json",
     "pull_requests": {
       "48303": "9169e213a4611a4ff27a95a9c6ec1f8bb594a27f",
       "48304": "f45f22516cdc1013dcaed84867fee9d14ba1d017",
