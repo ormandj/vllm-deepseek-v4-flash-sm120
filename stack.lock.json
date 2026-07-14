@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "generated_at": "2026-07-14T18:33:58Z",
+  "vllm": {
+    "repository": "https://github.com/vllm-project/vllm",
+    "base_commit": "cdaa40d2a8c9297349669fc6e7db6dcb282df0b8",
+    "pull_requests": {
+      "48303": "9169e213a4611a4ff27a95a9c6ec1f8bb594a27f",
+      "48304": "f45f22516cdc1013dcaed84867fee9d14ba1d017",
+      "48317": "22563e7c5a68b7afe2bec071b9d838558cfe0200"
+    },
+    "local_selector_patch_sha256": "91157a33886d9ba5995a49a7d2b7d1525a32661d655eae46b161fb7d2aa2a7b0"
+  },
+  "flashinfer": {
+    "repository": "https://github.com/flashinfer-ai/flashinfer",
+    "package_base": "flashinfer-python==0.6.14",
+    "package_cubin": "flashinfer-cubin==0.6.13",
+    "pull_requests": {
+      "3817": "76fd3daf7064b73924ebb3bcb1e93a8a26fc6da9",
+      "3834": "0c5fda59bb6fa71eae875693a024bb0fb37ba7d6",
+      "3903": "d3a00179d61a76d3e58e026103aefd63995387e1",
+      "3930": "e855cc25993d11d4707678d68fbde108d0578bef"
+    },
+    "resolver_followup": "bd6765dea271b23a579938132f8ca1b9cbf6a2a5"
+  },
+  "patch_sha256": {
+    "patches/vllm/vllm-48303-mxfp4-flashinfer-cutlass.patch": "567960d5df7bcd2ef54c678ff3af1777931f28407fe4a1662dc3fbe1a40a0e2e",
+    "patches/vllm/vllm-48304-mtp-draft-rope.patch": "d9582a4240130726d6e44b30a85c7a267fe50d75be79f9f16220c9a859ab8bd1",
+    "patches/vllm/vllm-48317-kv-capacity-reporting.patch": "312e1ee355cb2512cc0fee378d95f95dce8f5037edb186f77fc6045b9d7a89cd",
+    "patches/vllm/vllm-sm12x-flashinfer-allreduce-selector.patch": "91157a33886d9ba5995a49a7d2b7d1525a32661d655eae46b161fb7d2aa2a7b0",
+    "patches/flashinfer/fi-3817-sm120-topk256-decode.patch": "e749f9c17fe026f691afd99718d9eb99916361fd313163ce4dc7172744abad21",
+    "patches/flashinfer/fi-3834-sm120-topk256-prefill.patch": "3aad0d8102eb40c38f2577ccdb16a361864fbe862e6809e406d4bc258ba22d80",
+    "patches/flashinfer/fi-3903-sm12x-allreduce.patch": "0c8ecaf21c86e0315b5bf621f0e386a100dfc991f681734616f7e28bc1e02869",
+    "patches/flashinfer/fi-3930-cuda-runtime-resolver.patch": "7d53a9739b6c2b69babfd20784c8283671664a7bd93a5f09aeddfaa6a47f12a3"
+  },
+  "profiles": {
+    "control": "Pinned vLLM base with the same image toolchain and no source carries.",
+    "agentic-mtp0": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
+    "dspark-preview": "agentic-mtp0 + #48304 + FlashInfer #3817 and #3834. Preview until speculative-path selection is complete."
+  }
+}

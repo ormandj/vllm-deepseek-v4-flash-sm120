@@ -1,0 +1,319 @@
+From f45f22516cdc1013dcaed84867fee9d14ba1d017 Mon Sep 17 00:00:00 2001
+From: David Orman <ormandj@corenode.com>
+Date: Fri, 10 Jul 2026 18:45:27 -0500
+Subject: [PATCH] [Bugfix] Honor DeepSeek V4 checkpoints' MTP-layer
+ compress_ratio entry (unscaled draft rope)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+DeepseekV4Attention maps every layer_id >= config.num_hidden_layers to
+compress_ratio=1 on the assumption that the MTP draft layer is never
+included in the checkpoint's compress_ratios list. DSpark-style
+DeepSeek-V4 checkpoints DO carry an entry for the draft layer, with
+value 0: uncompressed KV and plain (non-YaRN) rope. Forcing ratio 1
+routes the draft through deepseek_yarn rope with positional geometry
+the draft head was not trained with, and draft acceptance decays with
+speculation depth.
+
+Measured serving DeepSeek-V4-Flash-DSpark (mtp, 2x RTX PRO 6000 SM120,
+TP=2): draft acceptance under load 57% -> 69%, with position-2
+acceptance 0.275 -> 0.50 — the signature of a draft whose rope drifts
+from the target as depth grows. (Measured with the full change; the
+rope-type selection and the FP32 cache pin were not ablated
+separately.)
+
+Design: the raw checkpoint value is never stored as the operational
+compress_ratio — KV-cache specs treat 1 as "no compression" and divide
+by the ratio, so a stored 0 would be a sentinel leaking into an
+operational invariant. resolve_layer_compress_ratio() clamps the
+operational ratio to max(1, entry) and returns a separate
+use_unscaled_rope flag that only affects rope construction:
+
+- attention.py: draft layers that still index into compress_ratios
+  take the checkpoint's entry (clamped); entry 0 selects unscaled rope.
+  Layers beyond the list keep the ratio-1/yarn fallback, so checkpoints
+  whose list stops at num_hidden_layers are unaffected. An explicit
+  nonzero draft entry is now honored rather than forced to 1.
+- common/rope.py: use_unscaled_rope selects rope_type "default".
+  rope_parameters is copied before mutation — the previous in-place
+  writes mutated the shared hf_config dict from every layer.
+- common/rope.py: pin get_rope(dtype=torch.float32). The yarn path
+  already re-registers its cos/sin cache as fp32; the default-rope path
+  cast the cache to the ambient default dtype (bf16 when the draft
+  initializes), and the DS4 kernels consume the cached table directly.
+
+Tests cover the absent/zero/nonzero draft-entry matrix, rope class
+selection for both paths, the no-shared-config-mutation invariant, and
+the fp32 cache under a bf16 default dtype.
+
+Ports local-inference-lab/vllm commits 03ede73f1d (Luke Alonso,
+co-authored Martin Vit) and 1cb2260d4c (Martin Vit), redesigned to the
+clamp+flag form.
+
+Co-authored-by: Luke Alonso <lalonso@gmail.com>
+Co-authored-by: Martin Vit <martin@voipmonitor.org>
+Co-authored-by: Claude <noreply@anthropic.com>
+Signed-off-by: David Orman <ormandj@corenode.com>
+---
+ tests/models/test_deepseek_v4_rope.py  | 150 +++++++++++++++++++++++++
+ vllm/models/deepseek_v4/attention.py   |  30 +++--
+ vllm/models/deepseek_v4/common/rope.py |  14 ++-
+ 3 files changed, 186 insertions(+), 8 deletions(-)
+ create mode 100644 tests/models/test_deepseek_v4_rope.py
+
+diff --git a/tests/models/test_deepseek_v4_rope.py b/tests/models/test_deepseek_v4_rope.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa00cf71124e957960519aecb3de22aa6e29b9ee
+--- /dev/null
++++ b/tests/models/test_deepseek_v4_rope.py
+@@ -0,0 +1,150 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Unit tests for DeepSeek V4 per-layer rope selection.
++
++Covers the MTP draft layer's compress_ratios handling: checkpoints that
++include their draft layer in compress_ratios with an entry of 0 get an
++uncompressed-KV, plain-rope draft; the operational compress ratio is never
++0 (KV-cache specs treat 1 as "no compression" and divide by the ratio).
++"""
++
++import types
++
++import pytest
++import torch
++
++from vllm.model_executor.layers.rotary_embedding import _ROPE_DICT, RotaryEmbedding
++from vllm.model_executor.layers.rotary_embedding.deepseek_scaling_rope import (
++    DeepseekScalingRotaryEmbedding,
++    DeepseekV4ScalingRotaryEmbedding,
++)
++from vllm.models.deepseek_v4.attention import resolve_layer_compress_ratio
++from vllm.models.deepseek_v4.common.rope import build_deepseek_v4_rope
++
++NUM_HIDDEN_LAYERS = 4
++
++
++@pytest.fixture(autouse=True)
++def _clear_rope_cache():
++    _ROPE_DICT.clear()
++    yield
++    _ROPE_DICT.clear()
++
++
++def _config(compress_ratios: list[int]) -> types.SimpleNamespace:
++    return types.SimpleNamespace(
++        num_hidden_layers=NUM_HIDDEN_LAYERS,
++        compress_ratios=compress_ratios,
++        rope_theta=10000.0,
++        compress_rope_theta=1000000.0,
++        max_position_embeddings=4096,
++        rope_parameters={
++            "rope_type": "yarn",
++            "factor": 8.0,
++            "original_max_position_embeddings": 512,
++            "beta_fast": 32,
++            "beta_slow": 1,
++        },
++    )
++
++
++@pytest.mark.parametrize(
++    "compress_ratios,layer_id,expected_ratio,expected_unscaled",
++    [
++        # Main layers: clamped, never unscaled (unchanged upstream behavior).
++        ([1, 4, 4, 1], 0, 1, False),
++        ([1, 4, 4, 1], 1, 4, False),
++        ([0, 4, 4, 1], 0, 1, False),
++        # Draft layer present in the list with 0: operational ratio 1,
++        # unscaled rope selected.
++        ([1, 4, 4, 1, 0], NUM_HIDDEN_LAYERS, 1, True),
++        # Draft layer present with an explicit nonzero entry: honored.
++        ([1, 4, 4, 1, 4], NUM_HIDDEN_LAYERS, 4, False),
++        # Draft layer absent from the list: legacy fallback (ratio 1, yarn).
++        ([1, 4, 4, 1], NUM_HIDDEN_LAYERS, 1, False),
++        ([1, 4, 4, 1], NUM_HIDDEN_LAYERS + 1, 1, False),
++    ],
++)
++def test_resolve_layer_compress_ratio(
++    compress_ratios: list[int],
++    layer_id: int,
++    expected_ratio: int,
++    expected_unscaled: bool,
++):
++    ratio, unscaled = resolve_layer_compress_ratio(_config(compress_ratios), layer_id)
++    assert ratio == expected_ratio
++    assert unscaled == expected_unscaled
++    # The operational ratio is an invariant: never below 1.
++    assert ratio >= 1
++
++
++def test_unscaled_rope_selects_plain_rotary_embedding(default_vllm_config):
++    config = _config([1, 4, 4, 1, 0])
++    rope = build_deepseek_v4_rope(
++        config,
++        head_dim=64,
++        rope_head_dim=64,
++        max_position_embeddings=config.max_position_embeddings,
++        compress_ratio=1,
++        use_unscaled_rope=True,
++    )
++    assert type(rope) is RotaryEmbedding
++    assert not isinstance(rope, DeepseekScalingRotaryEmbedding)
++
++
++def test_scaled_rope_unchanged_without_flag(default_vllm_config):
++    config = _config([1, 4, 4, 1])
++    rope = build_deepseek_v4_rope(
++        config,
++        head_dim=64,
++        rope_head_dim=64,
++        max_position_embeddings=config.max_position_embeddings,
++        compress_ratio=1,
++    )
++    # The V4 subclass specifically: losing is_deepseek_v4 would silently
++    # downgrade to the base deepseek-yarn implementation.
++    assert isinstance(rope, DeepseekV4ScalingRotaryEmbedding)
++
++
++def test_attention_init_wires_the_resolver():
++    # Guards the production wiring: the resolver and rope builder are unit
++    # tested above, but a refactor that reverts DeepseekV4Attention.__init__
++    # to inline forced-ratio logic (leaving the helper unused) must fail.
++    from vllm.models.deepseek_v4.attention import DeepseekV4Attention
++
++    assert (
++        "resolve_layer_compress_ratio" in DeepseekV4Attention.__init__.__code__.co_names
++    )
++
++
++def test_rope_parameters_dict_not_mutated(default_vllm_config):
++    config = _config([1, 4, 4, 1, 0])
++    snapshot = dict(config.rope_parameters)
++    for compress_ratio, use_unscaled in ((1, True), (1, False), (4, False)):
++        build_deepseek_v4_rope(
++            config,
++            head_dim=64,
++            rope_head_dim=64,
++            max_position_embeddings=config.max_position_embeddings,
++            compress_ratio=compress_ratio,
++            use_unscaled_rope=use_unscaled,
++        )
++        assert config.rope_parameters == snapshot
++
++
++def test_default_rope_cos_sin_cache_is_fp32_under_bf16_default(default_vllm_config):
++    config = _config([1, 4, 4, 1, 0])
++    old_dtype = torch.get_default_dtype()
++    torch.set_default_dtype(torch.bfloat16)
++    try:
++        rope = build_deepseek_v4_rope(
++            config,
++            head_dim=64,
++            rope_head_dim=64,
++            max_position_embeddings=config.max_position_embeddings,
++            compress_ratio=1,
++            use_unscaled_rope=True,
++        )
++    finally:
++        torch.set_default_dtype(old_dtype)
++    assert rope.cos_sin_cache.dtype == torch.float32
+diff --git a/vllm/models/deepseek_v4/attention.py b/vllm/models/deepseek_v4/attention.py
+index 5628a6d0d728e2ec4a981d6ed74d11ee48c91dfd..293a1255822394a8cb695ac63bd1b607efdd1b97 100644
+--- a/vllm/models/deepseek_v4/attention.py
++++ b/vllm/models/deepseek_v4/attention.py
+@@ -98,6 +98,25 @@ def _resolve_dsv4_kv_cache_dtype(
+     return kv_cache_dtype, torch.bfloat16
+ 
+ 
++def resolve_layer_compress_ratio(config, layer_id: int) -> tuple[int, bool]:
++    """Resolve (operational_compress_ratio, use_unscaled_rope) for a layer.
++
++    NOTE(zyongye) Compress ratio can't be 0; historically every layer_id >=
++    num_hidden_layers (the MTP draft layer) was mapped to 1 because "MTP layer
++    is not included in the compress ratio list". Some checkpoints DO include
++    their MTP draft layer in compress_ratios, with an entry of 0 meaning
++    uncompressed KV and plain (unscaled) rope. The operational ratio stays
++    clamped to >= 1 (KV-cache specs treat 1 as "no compression" and divide by
++    it); a raw 0 only selects unscaled rope for that layer.
++    """
++    if layer_id < config.num_hidden_layers:
++        return max(1, config.compress_ratios[layer_id]), False
++    if layer_id < len(config.compress_ratios):
++        raw_compress_ratio = config.compress_ratios[layer_id]
++        return max(1, raw_compress_ratio), raw_compress_ratio == 0
++    return 1, False
++
++
+ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
+     """DeepseekV4 MLA attention layer.
+ 
+@@ -181,13 +200,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
+         self.n_groups = config.o_groups
+         self.n_local_groups = self.n_groups // tp_size
+         self.window_size = config.sliding_window
+-        # NOTE(zyongye) Compress ratio can't be 0
+-        # we do this for because MTP layer is not included
+-        # in the compress ratio list
+-        if layer_id < config.num_hidden_layers:
+-            self.compress_ratio = max(1, config.compress_ratios[layer_id])
+-        else:
+-            self.compress_ratio = 1
++        self.compress_ratio, use_unscaled_rope = resolve_layer_compress_ratio(
++            config, layer_id
++        )
+         self.eps = config.rms_norm_eps
+         self.scale = self.head_dim**-0.5
+ 
+@@ -245,6 +260,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
+             rope_head_dim=self.rope_head_dim,
+             max_position_embeddings=config.max_position_embeddings,
+             compress_ratio=self.compress_ratio,
++            use_unscaled_rope=use_unscaled_rope,
+         )
+         self.indexer_rotary_emb = self.rotary_emb
+         self.topk_indices_buffer = topk_indices_buffer
+diff --git a/vllm/models/deepseek_v4/common/rope.py b/vllm/models/deepseek_v4/common/rope.py
+index 44ae3286eb21241af70362761a36f097e0d04aa0..1917a0513a79f1cf0e073473bf28220df94c39fa 100644
+--- a/vllm/models/deepseek_v4/common/rope.py
++++ b/vllm/models/deepseek_v4/common/rope.py
+@@ -2,6 +2,8 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ """DeepseekV4 rotary embedding initialization."""
+ 
++import torch
++
+ from vllm.model_executor.layers.rotary_embedding import get_rope
+ from vllm.model_executor.layers.rotary_embedding.base import RotaryEmbedding
+ 
+@@ -13,11 +15,17 @@ def build_deepseek_v4_rope(
+     rope_head_dim: int,
+     max_position_embeddings: int,
+     compress_ratio: int,
++    use_unscaled_rope: bool = False,
+ ) -> RotaryEmbedding:
+-    rope_parameters = config.rope_parameters
++    # Copy so per-layer overrides cannot leak into the shared hf_config dict.
++    rope_parameters = dict(config.rope_parameters)
+     rope_parameters["rope_theta"] = (
+         config.compress_rope_theta if compress_ratio > 1 else config.rope_theta
+     )
++    if use_unscaled_rope:
++        # The MTP draft layer of DSpark-style checkpoints (compress_ratios
++        # entry 0) is trained with plain rope, not the yarn-scaled variant.
++        rope_parameters["rope_type"] = "default"
+     if rope_parameters["rope_type"] != "default":
+         rope_parameters["rope_type"] = (
+             "deepseek_yarn"
+@@ -33,4 +41,8 @@ def build_deepseek_v4_rope(
+         max_position=max_position_embeddings,
+         rope_parameters=rope_parameters,
+         is_neox_style=False,
++        # DeepSeek V4 kernels consume the cached cos/sin table directly and
++        # require FP32 even when the draft/MTP model is initialized under a
++        # lower default dtype.
++        dtype=torch.float32,
+     )
+-- 
+2.55.0
+

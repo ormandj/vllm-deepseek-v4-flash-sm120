@@ -1,0 +1,252 @@
+From 22563e7c5a68b7afe2bec071b9d838558cfe0200 Mon Sep 17 00:00:00 2001
+From: David Orman <ormandj@corenode.com>
+Date: Fri, 10 Jul 2026 23:30:07 -0500
+Subject: [PATCH] [Bugfix] Count per-group blocks in
+ get_max_concurrency_for_kv_cache_config
+
+The maximum-concurrency estimate normalized every group's per-request
+memory by the FIRST group's page size (the max-layer-count factor in
+its numerator and denominator cancels algebraically). That is only
+correct when all groups share one page size and no group carries an
+aggregated spec:
+
+- A UniformTypeKVCacheSpecs group's max_memory_usage_bytes and
+  page_size_bytes are aggregated across its layers; dividing its memory
+  by another group's per-layer page size misstates its block need.
+- Groups with page sizes different from groups[0] were all divided by
+  groups[0]'s.
+- The estimate also ignored block granularity: a request consumes whole
+  blocks from each group's block table.
+
+The two capacity call sites additionally disagreed with each other: the
+worker loop computes on worker configs (aggregated uniform-type
+groups), engine core on the scheduler config (representative per-layer
+specs), producing different numbers for the same deployment; the
+engine value feeds cache_config.kv_cache_size_tokens, readiness
+responses, and metrics metadata. Scheduling uses real block
+availability and is unaffected by either value.
+
+Fix: count block ids. A request at max_model_len needs
+cdiv(max_memory_usage_bytes, page_size_bytes) whole blocks from each
+group, all drawn from the shared pool, so the per-request total is the
+sum over groups. The ratio is identical for an aggregated uniform-type
+spec and its per-layer representative, so both call sites now agree.
+Equal-group single-page-size results are unchanged (existing test
+expectations 1.5/3/3 hold, as does the unequal-group case at 1153
+blocks); new tests pin the uniform-type worker shape (previously
+3.27 instead of 3), worker/scheduler shape agreement, and a packed
+layout built with _get_kv_cache_config_packed (previously 1061 blocks
+per request instead of 1097).
+
+Observed on DeepSeek-V4-Flash-DSpark (2x RTX PRO 6000 SM120, TP=2,
+max_model_len 786432, 7.64 GiB KV pool, num_blocks 7620, hybrid
+MLA/SWA/state packed layout, block stride 1,077,120 B): the old
+formula computes 6,056 blocks per request and reports "GPU KV cache
+size: 989,532 tokens (1.26x)"; per-group block counting gives 6,426
+blocks (3,072 full-MLA + 262 SWA + 3,092 compressor-state, the states
+dominated by the in-flight admission reserve against block sizes 4
+and 8) and reports 932,557 tokens (1.19x). The same-model mtp2
+deployment moves from 1,526,590 to 1,448,723 tokens. The old value
+overstates the admission-conservative capacity by 5-6% on these
+layouts and by other amounts elsewhere; the corrected value is the
+sum of the per-group admission bounds the block pool actually
+enforces.
+
+The per-group accounting flaw was identified in local-inference-lab
+commit 1cc15489 (Luke Alonso, co-authored Martin Vit), which rewrote
+this function for that tree's layout; this formulation counts block ids
+so one expression covers the standard, packed, and uniform-type
+layouts and both call-site shapes.
+
+Co-authored-by: Luke Alonso <lalonso@gmail.com>
+Co-authored-by: Martin Vit <martin@voipmonitor.org>
+Co-authored-by: Claude <noreply@anthropic.com>
+Signed-off-by: David Orman <ormandj@corenode.com>
+---
+ tests/v1/core/test_kv_cache_utils.py | 123 +++++++++++++++++++++++++++
+ vllm/v1/core/kv_cache_utils.py       |  28 +++---
+ 2 files changed, 139 insertions(+), 12 deletions(-)
+
+diff --git a/tests/v1/core/test_kv_cache_utils.py b/tests/v1/core/test_kv_cache_utils.py
+index 947672c48af652ea3a0ca74d48c028caf02b6416..85795f9dfb602925e9542beefb0bb4fb583ddc80 100644
+--- a/tests/v1/core/test_kv_cache_utils.py
++++ b/tests/v1/core/test_kv_cache_utils.py
+@@ -1,5 +1,6 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++import copy
+ import hashlib
+ import importlib
+ from collections.abc import Callable
+@@ -1473,6 +1474,128 @@ def test_get_max_concurrency_for_kv_cache_config():
+     assert num_tokens == max_concurrency_hybrid_model * max_model_len
+     assert max_concurrency == max_concurrency_hybrid_model
+ 
++    # Unequal group sizes in the standard layout: each group's pages cost
++    # whole pool blocks, so a request needs 1024 + 129 = 1153 blocks — the
++    # same as the equal-hybrid case above, regardless of the second group
++    # holding only 2 layers.
++    kv_cache_config_unequal_groups = KVCacheConfig(
++        num_blocks=1153 * 3,
++        kv_cache_tensors=[],
++        kv_cache_groups=[
++            KVCacheGroupSpec([f"layer_{i}" for i in range(32)], full_attention_spec),
++            KVCacheGroupSpec(["layer_32", "layer_33"], sliding_window_spec),
++        ],
++    )
++    assert (
++        get_max_concurrency_for_kv_cache_config(
++            vllm_config, kv_cache_config_unequal_groups
++        )
++        == 3
++    )
++
++    # UniformTypeKVCacheSpecs group (worker config shape): the aggregated
++    # spec's memory/page ratio equals a single layer's page count, so the
++    # group needs 1024 blocks and the request 1153 in total. The previous
++    # formula normalized both groups' memory by the first group's page size,
++    # reporting 3459/1057 = 3.27 here instead of 3 — and a different value
++    # again for the scheduler-config shape below.
++    uniform_full_spec = UniformTypeKVCacheSpecs(
++        block_size=full_attention_spec.block_size,
++        kv_cache_specs={f"layer_{i}": full_attention_spec for i in range(4)},
++    )
++    kv_cache_config_uniform_group = KVCacheConfig(
++        num_blocks=1153 * 3,
++        kv_cache_tensors=[],
++        kv_cache_groups=[
++            KVCacheGroupSpec([f"layer_{i}" for i in range(4)], uniform_full_spec),
++            KVCacheGroupSpec(["layer_4", "layer_5"], sliding_window_spec),
++        ],
++    )
++    assert (
++        get_max_concurrency_for_kv_cache_config(
++            vllm_config, kv_cache_config_uniform_group
++        )
++        == 3
++    )
++
++    # Scheduler-config shape: generate_scheduler_kv_cache_config replaces the
++    # uniform-type group's spec with a representative per-layer spec.
++    # Capacity must not change between the two shapes (the engine computes
++    # on the scheduler config, the worker loop on the worker config).
++    kv_cache_config_scheduler_shape = generate_scheduler_kv_cache_config(
++        [copy.deepcopy(kv_cache_config_uniform_group)]
++    )
++    assert get_max_concurrency_for_kv_cache_config(
++        vllm_config, kv_cache_config_scheduler_shape
++    ) == get_max_concurrency_for_kv_cache_config(
++        vllm_config, kv_cache_config_uniform_group
++    )
++
++
++def test_get_max_concurrency_packed_kv_cache_config():
++    from vllm.v1.core.kv_cache_utils import (
++        _get_kv_cache_config_packed,
++        _use_packed_kv_cache_config,
++    )
++
++    model_config = ModelConfig(
++        "Qwen/Qwen1.5-7B",
++        runner="generate",
++        dtype="float16",
++        max_model_len=16384,
++    )
++    scheduler_config = SchedulerConfig(
++        max_num_batched_tokens=1024,
++        enable_chunked_prefill=True,
++        max_model_len=model_config.max_model_len,
++        is_encoder_decoder=model_config.is_encoder_decoder,
++        async_scheduling=False,
++    )
++    vllm_config = VllmConfig(
++        model_config=model_config,
++        scheduler_config=scheduler_config,
++    )
++
++    # All-UniformTypeKVCacheSpecs groups select the packed layout.
++    mla_specs = {f"layer_{i}": new_mla_spec() for i in range(4)}
++    swa_specs = {
++        f"layer_{i}": SlidingWindowMLASpec(
++            block_size=16,
++            num_kv_heads=1,
++            head_size=576,
++            dtype=torch.float32,
++            sliding_window=128,
++        )
++        for i in range(4, 6)
++    }
++    kv_cache_groups = [
++        KVCacheGroupSpec(
++            list(mla_specs),
++            UniformTypeKVCacheSpecs(block_size=16, kv_cache_specs=mla_specs),
++        ),
++        KVCacheGroupSpec(
++            list(swa_specs),
++            UniformTypeKVCacheSpecs(block_size=16, kv_cache_specs=swa_specs),
++        ),
++    ]
++    assert _use_packed_kv_cache_config(vllm_config, kv_cache_groups)
++    num_blocks, kv_cache_tensors = _get_kv_cache_config_packed(
++        vllm_config, kv_cache_groups, 2 * GiB_bytes
++    )
++    assert num_blocks > 0
++    kv_cache_config_packed = KVCacheConfig(
++        num_blocks=num_blocks,
++        kv_cache_tensors=kv_cache_tensors,
++        kv_cache_groups=kv_cache_groups,
++    )
++    # Per-request blocks: the MLA group needs cdiv(16384, 16) = 1024 pages;
++    # the SWA group cdiv(min(128 - 1 + 1024, 16384), 16) + 1 = 73. The
++    # previous formula normalized by the first group's page size and gave
++    # 1061 blocks per request instead of 1097.
++    assert get_max_concurrency_for_kv_cache_config(
++        vllm_config, kv_cache_config_packed
++    ) == num_blocks / (1024 + 73)
++
+ 
+ def test_allocate_with_lookahead():
+     """Verify that lookahead tokens correctly affect block allocation"""
+diff --git a/vllm/v1/core/kv_cache_utils.py b/vllm/v1/core/kv_cache_utils.py
+index 27af83c9a51624bcad375199c38a4e1d38807474..b84c90a0af4be5218f6df15f5e8a7dfd615931f1 100644
+--- a/vllm/v1/core/kv_cache_utils.py
++++ b/vllm/v1/core/kv_cache_utils.py
+@@ -935,19 +935,23 @@ def get_max_concurrency_for_kv_cache_config(
+ ) -> float:
+     """
+     Get the maximum concurrency for the given KV cache configuration.
+-    """
+-    num_layer_per_group = max(
+-        len(group.layer_names) for group in kv_cache_config.kv_cache_groups
+-    )
+-    max_memory_usage_per_request = num_layer_per_group * max_memory_usage_bytes(
+-        vllm_config, (group.kv_cache_spec for group in kv_cache_config.kv_cache_groups)
+-    )
+-    memory_per_block = (
+-        kv_cache_config.kv_cache_groups[0].kv_cache_spec.page_size_bytes
+-        * num_layer_per_group
++
++    A request at max_model_len consumes whole blocks from each group's block
++    table — cdiv(per-request bytes, page bytes) of the group's spec — and all
++    groups draw those block ids from one shared pool, so the per-request
++    total is the sum over groups. The memory/page ratio is identical whether
++    a group carries an aggregated UniformTypeKVCacheSpecs (worker config) or
++    a representative per-layer spec (scheduler config), so both capacity
++    call sites agree.
++    """
++    num_blocks_per_request = sum(
++        cdiv(
++            group.kv_cache_spec.max_memory_usage_bytes(vllm_config),
++            group.kv_cache_spec.page_size_bytes,
++        )
++        for group in kv_cache_config.kv_cache_groups
+     )
+-    num_block_per_request = cdiv(max_memory_usage_per_request, memory_per_block)
+-    max_concurrency = kv_cache_config.num_blocks / num_block_per_request
++    max_concurrency = kv_cache_config.num_blocks / num_blocks_per_request
+     return max_concurrency
+ 
+ 
+-- 
+2.55.0
+

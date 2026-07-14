@@ -1,0 +1,317 @@
+# fi-3903-sm12x-allreduce.patch
+#
+# flashinfer-ai/flashinfer PR #3903 (yichengj0, NVIDIA), head d3a00179,
+# fetched 2026-07-13 and applied to the flashinfer-python 0.6.14 wheel layout.
+# Extends the TensorRT-LLM allreduce paths to SM120/SM121 and corrects the
+# legacy Lamport peer-buffer pointer packing.
+#
+# Adjustments versus the upstream PR diff:
+#   * csrc/ and include/ are mapped to flashinfer/data/csrc/ and
+#     flashinfer/data/include/, respectively, for the installed wheel.
+#   * tests/comm test hunks are omitted because tests are not shipped in the
+#     wheel. No production source changes are omitted.
+#   * The three upstream commits rebase cleanly onto FlashInfer main
+#     e179800192; the resulting production diff is byte-equivalent to this
+#     wheel-layout patch apart from path mapping.
+#
+# Historical SM120 correctness and latency observations are retained under
+# /tmp/sglang-traces/publication/flashinfer-microbench/. They lack the complete
+# immutable run provenance now required and are explicitly excluded from
+# performance comparison, averaging, publication, and production decisions.
+#
+# Upstream status: open PR. Drop this patch when a FlashInfer release includes
+# #3903. The PR's cluster-capability review concern was withdrawn after the
+# author reported successful SM120/SM121 launches for block sizes 128-1024;
+# our SM120 launch matrix independently passed.
+diff --git a/flashinfer/data/csrc/trtllm_allreduce.cu b/flashinfer/data/csrc/trtllm_allreduce.cu
+index 4fb7915b..74526dd1 100644
+--- a/flashinfer/data/csrc/trtllm_allreduce.cu
++++ b/flashinfer/data/csrc/trtllm_allreduce.cu
+@@ -127,6 +127,9 @@ void trtllm_custom_all_reduce(TensorView in, TensorView out, int64_t tp_size, in
+         intermediate_buffer.has_value() ? intermediate_buffer.value().data_ptr() : nullptr;
+ 
+     // add ipc buffer pointers
++    TVM_FFI_ICHECK(tp_size <= static_cast<int64_t>(MAX_RANKS_PER_NODE))
++        << "tp_size (" << tp_size << ") cannot exceed MAX_RANKS_PER_NODE (" << MAX_RANKS_PER_NODE
++        << ")";
+     for (int i = 0; i < tp_size; ++i) {
+       params.peer_comm_buffer_ptrs[i] =
+           reinterpret_cast<void*>(static_cast<int64_t*>(peer_comm_buffer_ptrs.data_ptr())[i]);
+@@ -143,12 +146,15 @@ void trtllm_custom_all_reduce(TensorView in, TensorView out, int64_t tp_size, in
+       TVM_FFI_ICHECK(lamport_peer_comm_buffer_ptrs_2.has_value())
+           << "lamport_peer_comm_buffer_ptrs_2 is required if lamport_peer_comm_buffer_ptrs_0 "
+              "is provided";
++      // Kernels read the triple-buffered lamport pointers at stride
++      // MAX_RANKS_PER_NODE, not tp_size.
+       for (int i = 0; i < tp_size; ++i) {
+         params.fusion_params.lamport_peer_comm_buffer_ptrs[i] = reinterpret_cast<void*>(
+             static_cast<int64_t*>(lamport_peer_comm_buffer_ptrs_0.value().data_ptr())[i]);
+-        params.fusion_params.lamport_peer_comm_buffer_ptrs[i + tp_size] = reinterpret_cast<void*>(
+-            static_cast<int64_t*>(lamport_peer_comm_buffer_ptrs_1.value().data_ptr())[i]);
+-        params.fusion_params.lamport_peer_comm_buffer_ptrs[i + tp_size * 2] =
++        params.fusion_params.lamport_peer_comm_buffer_ptrs[i + MAX_RANKS_PER_NODE] =
++            reinterpret_cast<void*>(
++                static_cast<int64_t*>(lamport_peer_comm_buffer_ptrs_1.value().data_ptr())[i]);
++        params.fusion_params.lamport_peer_comm_buffer_ptrs[i + MAX_RANKS_PER_NODE * 2] =
+             reinterpret_cast<void*>(
+                 static_cast<int64_t*>(lamport_peer_comm_buffer_ptrs_2.value().data_ptr())[i]);
+       }
+diff --git a/flashinfer/aot.py b/flashinfer/aot.py
+index e7cb2352..8f2c93b5 100644
+--- a/flashinfer/aot.py
++++ b/flashinfer/aot.py
+@@ -600,8 +600,17 @@ def gen_all_modules(
+         )
+ 
+         jit_specs.append(gen_comm_alltoall_module())
+-        if has_sm100:
++        if (
++            has_sm90
++            or has_sm100
++            or has_sm100f
++            or has_sm103
++            or has_sm120
++            or has_sm120f
++            or has_sm121
++        ):
+             jit_specs.append(gen_trtllm_comm_module())
++        if has_sm100:
+             jit_specs.append(gen_trtllm_mnnvl_comm_module())
+             jit_specs.append(gen_moe_alltoall_module())
+             # dcp_alltoall: kernel itself supports SM90+, but ptxas 12.6.0 has
+diff --git a/flashinfer/jit/comm.py b/flashinfer/jit/comm.py
+index b4fb4530..b219df4e 100644
+--- a/flashinfer/jit/comm.py
++++ b/flashinfer/jit/comm.py
+@@ -189,7 +189,7 @@ def gen_mixed_comm_module() -> JitSpec:
+ 
+ def gen_trtllm_comm_module() -> JitSpec:
+     nvcc_flags = current_compilation_context.get_nvcc_flags_list(
+-        supported_major_versions=[9, 10]
++        supported_major_versions=[9, 10, 12]
+     )
+     return gen_jit_spec(
+         "trtllm_comm",
+diff --git a/flashinfer/data/include/flashinfer/comm/trtllm_allreduce.cuh b/flashinfer/data/include/flashinfer/comm/trtllm_allreduce.cuh
+index 08210ea0..45390d77 100644
+--- a/flashinfer/data/include/flashinfer/comm/trtllm_allreduce.cuh
++++ b/flashinfer/data/include/flashinfer/comm/trtllm_allreduce.cuh
+@@ -414,7 +414,7 @@ __global__ void rms_norm_kernel(AllReduceParams<T> params) {
+   local_final_output_buffer += block_offset;
+   intermediate_buffer += block_offset;
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaGridDependencySynchronize();
+ #endif
+ 
+@@ -452,7 +452,7 @@ __global__ void rms_norm_kernel(AllReduceParams<T> params) {
+     inter_vec = rms_norm<T, Affine, VEC_SIZE>(denom, inter_vec, weight_vec);
+     inter_vec.store(&local_final_output_buffer[offset]);
+   }
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaTriggerProgrammaticLaunchCompletion();
+ #endif
+ }
+@@ -482,7 +482,7 @@ __global__ void rms_pre_post_norm_kernel(
+   local_final_output_buffer += block_offset;
+   intermediate_buffer += block_offset;
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaGridDependencySynchronize();
+ #endif
+ 
+@@ -530,7 +530,7 @@ __global__ void rms_pre_post_norm_kernel(
+     inter_vec = rms_norm<T, Affine, VEC_SIZE>(denom, inter_vec, weight_vec);
+     inter_vec.store(&local_final_output_buffer[offset]);
+   }
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaTriggerProgrammaticLaunchCompletion();
+ #endif
+ }
+@@ -708,7 +708,7 @@ struct Reducer<T, RanksPerNode, false> {
+ template <int ClusterSize, typename T, int RanksPerNode, bool Bias = false, bool Affine = false,
+           bool PushMode = true>
+ __global__ void lamport_style_one_shot_all_reduce_norm_kernel(AllReduceParams<T> params) {
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   namespace cg = cooperative_groups;
+   static_assert(RanksPerNode <= MAX_RANKS_PER_NODE);
+   static constexpr uint32_t VEC_SIZE = 16 / sizeof(T);
+@@ -810,8 +810,15 @@ cudaError_t lamport_style_one_shot_all_reduce_norm_kernel_launcher(AllReducePara
+   int warps_per_token = (threads_per_token + details::kWarpSize - 1) / details::kWarpSize;
+   int token_num = params.elts_total / params.fusion_params.hidden_size;
+   int warp_min_number = heuristic_min_warp_number(RanksPerNode, params.fusion_params.hidden_size);
+-  int cluster_size = std::min(((warps_per_token + warp_min_number - 1) / warp_min_number),
+-                              details::kClusterMaxSize);
++  // Clamp to the largest cluster the device can launch.
++  static const int max_cluster_size = std::min(
++      GetMaxClusterSize(
++          reinterpret_cast<void const*>(
++              lamport_style_one_shot_all_reduce_norm_kernel<1, T, RanksPerNode, Bias, Affine>),
++          details::kWarpSize),
++      details::kClusterMaxSize);
++  int cluster_size =
++      std::min(((warps_per_token + warp_min_number - 1) / warp_min_number), max_cluster_size);
+   int cta_size = warps_per_token / cluster_size * details::kWarpSize;
+   FLASHINFER_CHECK(cta_size <= details::kMaxCtaSize, "cta_size must be less than or equal to ",
+                    details::kMaxCtaSize);
+@@ -892,7 +899,7 @@ __global__ void __launch_bounds__(1024, 1)
+     buffers[ii] = reinterpret_cast<T*>(params.peer_comm_buffer_ptrs[rank]);
+   }
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaGridDependencySynchronize();
+ #endif
+ 
+@@ -947,7 +954,7 @@ __global__ void __launch_bounds__(1024, 1)
+       sum_vec.store(&local_final_output_buffer[norm_offset + offset]);
+     }
+   }
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaTriggerProgrammaticLaunchCompletion();
+ #endif
+ }
+@@ -988,7 +995,7 @@ __global__ void __launch_bounds__(1024, 1)
+     buffers[ii] = reinterpret_cast<T*>(params.peer_comm_buffer_ptrs[rank]);
+   }
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaGridDependencySynchronize();
+ #endif
+ 
+@@ -1050,7 +1057,7 @@ __global__ void __launch_bounds__(1024, 1)
+     sum_vec = rms_norm<T, Affine, VEC_SIZE>(denom, sum_vec, weight_vec);
+     sum_vec.store(&local_final_output_buffer[norm_offset + thread_offset]);
+   }
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaTriggerProgrammaticLaunchCompletion();
+ #endif
+ }
+@@ -1204,7 +1211,7 @@ static __global__ void oneShotAllReduceKernel(AllReduceParams<T> params) {
+     buffers[ii] = reinterpret_cast<T*>(params.peer_comm_buffer_ptrs[rank]);
+   }
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaGridDependencySynchronize();
+ #endif
+ 
+@@ -1262,7 +1269,7 @@ static __global__ void oneShotAllReduceKernel(AllReduceParams<T> params) {
+     sums.store(&local_output_buffer[iter_offset]);
+   }
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaTriggerProgrammaticLaunchCompletion();
+ #endif
+ }
+@@ -1332,7 +1339,7 @@ static __global__ void __launch_bounds__(512, 1) twoShotAllReduceKernel(AllReduc
+     buffers[ii] = reinterpret_cast<T*>(params.peer_comm_buffer_ptrs[rank]);
+   }
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaGridDependencySynchronize();
+ #endif
+ 
+@@ -1441,7 +1448,7 @@ static __global__ void __launch_bounds__(512, 1) twoShotAllReduceKernel(AllReduc
+     }
+   }
+ 
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDA_ARCH__ < 1200))
++#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+   cudaTriggerProgrammaticLaunchCompletion();
+ #endif
+ }
+diff --git a/flashinfer/data/include/flashinfer/comm/trtllm_allreduce_fusion.cuh b/flashinfer/data/include/flashinfer/comm/trtllm_allreduce_fusion.cuh
+index c75be860..3bb86385 100644
+--- a/flashinfer/data/include/flashinfer/comm/trtllm_allreduce_fusion.cuh
++++ b/flashinfer/data/include/flashinfer/comm/trtllm_allreduce_fusion.cuh
+@@ -1703,12 +1703,12 @@ cudaError_t allreduce_fusion_kernel_launcher(AllReduceFusionParams<T> const& par
+     }
+   }
+   int threads_per_token = params.hidden_dim / VEC_SIZE;
+-  int cluster_size;
+-  if (SM >= 90) {
+-    cluster_size = 8;
+-  } else {
+-    cluster_size = 1;
+-  }
++  // Clamp to the largest cluster the device can launch.
++  static const int max_cluster_size =
++      GetMaxClusterSize(reinterpret_cast<void const*>(
++                            allreduce_fusion_kernel_oneshot_lamport<Pattern, T, NRanks, Fp32Acc>),
++                        128);
++  int cluster_size = std::min(8, max_cluster_size);
+   while (threads_per_token % cluster_size != 0 && cluster_size > 1) {
+     cluster_size /= 2;
+   }
+diff --git a/flashinfer/data/include/flashinfer/comm/trtllm_moe_allreduce_fusion.cuh b/flashinfer/data/include/flashinfer/comm/trtllm_moe_allreduce_fusion.cuh
+index 64b163e5..e5e1cf28 100644
+--- a/flashinfer/data/include/flashinfer/comm/trtllm_moe_allreduce_fusion.cuh
++++ b/flashinfer/data/include/flashinfer/comm/trtllm_moe_allreduce_fusion.cuh
+@@ -1120,7 +1120,13 @@ cudaError_t moereduction_allreduce_fusion_kernel_launcher(
+   // Total number of warp (within one cluster) that's need to handle one token
+   // given that each thread handle kElemsPerAccess
+   int warps_per_token = (threads_per_token + 31) / 32;
+-  int cluster_size = 8;
++  // Clamp to the largest cluster the device can launch.
++  static const int max_cluster_size = GetMaxClusterSize(
++      reinterpret_cast<void const*>(
++          moereduce_allreduce_fusion_kernel_oneshot_lamport<T, NRanks, AllReduceOut, ResidualOut,
++                                                            NormOut, QuantOut>),
++      128);
++  int cluster_size = std::min(8, max_cluster_size);
+   while (warps_per_token % cluster_size != 0) {
+     cluster_size /= 2;
+   }
+@@ -1427,7 +1433,13 @@ cudaError_t moefinalize_allreduce_fusion_kernel_launcher(
+   // Total number of warp (within one cluster) that's need to handle one token
+   // given that each thread handle VEC_SIZE
+   int warps_per_token = (threads_per_token + 31) / 32;
+-  int cluster_size = 8;
++  // Clamp to the largest cluster the device can launch.
++  static const int max_cluster_size = GetMaxClusterSize(
++      reinterpret_cast<void const*>(
++          moefinalize_allreduce_fusion_kernel_oneshot_lamport<T, NRanks, ResidualOut, NormOut,
++                                                              QuantOut, ScaleType>),
++      128);
++  int cluster_size = std::min(8, max_cluster_size);
+   while (warps_per_token % cluster_size != 0) {
+     cluster_size /= 2;
+   }
+diff --git a/flashinfer/data/include/flashinfer/utils.cuh b/flashinfer/data/include/flashinfer/utils.cuh
+index 15214049..dcad093e 100644
+--- a/flashinfer/data/include/flashinfer/utils.cuh
++++ b/flashinfer/data/include/flashinfer/utils.cuh
+@@ -359,6 +359,22 @@ inline std::pair<int, int> GetCudaComputeCapability() {
+   return std::make_pair(major, minor);
+ }
+ 
++// Largest thread-block cluster the current device can launch for `kernel`
++// (1 when clusters are unsupported, e.g. pre-SM90). Query once and
++// cache per call site; assumes each process handles a single GPU.
++inline int GetMaxClusterSize(const void* kernel, int block_dim) {
++  cudaLaunchConfig_t config = {};
++  config.gridDim = 8;
++  config.blockDim = block_dim;
++  int cluster_size = 0;
++  cudaError_t status = cudaOccupancyMaxPotentialClusterSize(&cluster_size, kernel, &config);
++  if (status != cudaSuccess || cluster_size < 1) {
++    (void)cudaGetLastError();
++    return 1;
++  }
++  return cluster_size;
++}
++
+ // This function is thread-safe and cached the sm_count.
+ // But it will only check the current CUDA device, thus assuming each process handles single GPU.
+ inline int GetCudaMultiProcessorCount() {

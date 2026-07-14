@@ -1,0 +1,25 @@
+# fi-3834-sm120-topk256-prefill.patch
+#
+# Snapshot of flashinfer-ai/flashinfer PR #3834 ("fix(sparse-mla-sm120): add
+# TOPK=256 DSV4 prefill instantiation", author waynehacking8, fetched
+# 2026-07-10), csrc hunk only (tests not shipped in the wheel), path mapped
+# to the installed layout. Companion to fi-3817 (decode): the DSpark draft's
+# 256-wide non-causal indices hit BOTH kernels — decode during verify steps,
+# prefill during the draft's context/warmup pass
+# ("Unsupported sparse-MLA prefill configuration: DSV4 ... topk=256",
+# sparse_mla_sm120.cu:271, observed 2026-07-10 on the fi-3817-only build).
+# One-branch dispatch addition mirroring the shipped 128/512/1024 arms.
+# Drop when flashinfer releases it.
+diff --git a/flashinfer/data/csrc/sparse_mla_sm120_prefill.cu b/flashinfer/data/csrc/sparse_mla_sm120_prefill.cu
+index a1e18ad630..e01a680fc4 100644
+--- a/flashinfer/data/csrc/sparse_mla_sm120_prefill.cu
++++ b/flashinfer/data/csrc/sparse_mla_sm120_prefill.cu
+@@ -293,6 +293,8 @@ inline bool dispatch_dsv4_single(int num_heads, int topk, const bf16* Q, const u
+   // amortises FP8's higher Tensor-Core throughput.
+   if (topk == 128)
+     DISPATCH_BY_NH_CM(BF16, 128);
++  else if (topk == 256)
++    DISPATCH_BY_NH_CM(BF16, 256);
+   else if (topk == 512)
+     DISPATCH_BY_NH_CM(FP8, 512);
+   else if (topk == 1024)

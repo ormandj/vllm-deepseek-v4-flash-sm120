@@ -1,0 +1,43 @@
+name: Build and publish image
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Build profile
+        required: true
+        type: choice
+        default: agentic-mtp0
+        options:
+          - control
+          - agentic-mtp0
+          - dspark-preview
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: sm120-vllm-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64, sm120-builder]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Log in to GHCR
+        run: |
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | podman login ghcr.io --username '${{ github.actor }}' --password-stdin
+      - name: Build and push immutable and moving tags
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          short_vllm=$(python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["base_commit"][:10])')
+          immutable="ghcr.io/${GITHUB_REPOSITORY}:$(date +%Y%m%d)-${short_vllm}-${PROFILE}"
+          moving="ghcr.io/${GITHUB_REPOSITORY}:${PROFILE}"
+          MAX_JOBS=48 ./scripts/build.sh "$PROFILE" "$immutable"
+          podman push "$immutable"
+          podman tag "$immutable" "$moving"
+          podman push "$moving"

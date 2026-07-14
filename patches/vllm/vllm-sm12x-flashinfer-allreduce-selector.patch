@@ -1,0 +1,60 @@
+# vllm-flashinfer-sm12x-allreduce.patch
+#
+# Companion enablement for flashinfer-ai/flashinfer PR #3903 (yichengj0,
+# NVIDIA). FlashInfer #3903 adds TensorRT-LLM allreduce support for SM120 and
+# SM121, but vLLM leaves its FlashInfer communicator disabled on capabilities
+# absent from these threshold tables.
+#
+# Validated against workflow VLLM_COMMIT fec64fea751 on 2026-07-13.
+# Upstream status: no existing vLLM PR found as of 2026-07-13. Prepare a small
+# companion PR after the same-hardware serving A/B and adversarial review.
+#
+# The 2 MiB TP2 limit is intentionally decode-only for the target BF16 hidden
+# size 6144 path. It includes the measured 1-128-token range while leaving
+# larger prefill collectives on NCCL. Revisit only with a retained crossover
+# sweep.
+diff --git a/tests/compile/passes/distributed/test_fusion_all_reduce.py b/tests/compile/passes/distributed/test_fusion_all_reduce.py
+index 1aac4b2be..ed2c6fea2 100644
+--- a/tests/compile/passes/distributed/test_fusion_all_reduce.py
++++ b/tests/compile/passes/distributed/test_fusion_all_reduce.py
+@@ -57,6 +57,10 @@ DEVICE_TYPE = current_platform.device_type
+         ("trtllm", 103, 8, 2 * 1024 * 1024 + 1, False),
+         ("trtllm", 100, 4, 4 * 1024 * 1024, True),
+         ("trtllm", 100, 4, 4 * 1024 * 1024 + 1, False),
++        ("trtllm", 120, 2, 2 * 1024 * 1024, True),
++        ("trtllm", 120, 2, 2 * 1024 * 1024 + 1, False),
++        ("trtllm", 121, 2, 2 * 1024 * 1024, True),
++        ("trtllm", 121, 2, 2 * 1024 * 1024 + 1, False),
+         ("trtllm", None, 8, 128 * 1024 * 1024, True),
+     ],
+ )
+diff --git a/vllm/compilation/passes/fusion/allreduce_rms_fusion.py b/vllm/compilation/passes/fusion/allreduce_rms_fusion.py
+index 4716e7012..6060e2d7b 100644
+--- a/vllm/compilation/passes/fusion/allreduce_rms_fusion.py
++++ b/vllm/compilation/passes/fusion/allreduce_rms_fusion.py
+@@ -119,6 +119,12 @@ FI_ALLREDUCE_FUSION_MAX_SIZE_MB: dict[int, dict[int, float]] = {
+         8: 2,  # 2MB
+         16: 64,  # 64MB (mnnvl multi-node)
+     },
++    120: {
++        2: 2,  # 2MB
++    },
++    121: {
++        2: 2,  # 2MB
++    },
+ }
+ 
+ # Max size of the input tensor per world size per device capability
+@@ -140,6 +146,12 @@ _FI_ALLREDUCE_ONE_SHOT_MAX_SIZES_MB: dict[int, dict[int, float]] = {
+         4: 4,  # 4MB
+         8: 2,  # 2MB
+     },
++    120: {
++        2: 2,  # 2MB
++    },
++    121: {
++        2: 2,  # 2MB
++    },
+ }
+ 
+ MiB = 1024 * 1024
