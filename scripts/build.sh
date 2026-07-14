@@ -29,8 +29,8 @@ podman build \
   --build-arg nvcc_threads="${NVCC_THREADS:-1}" \
   --build-arg SECURITY_REFRESH="$(date +%Y%m%d)" \
   --build-arg VLLM_BUILD_COMMIT="$vllm_commit" \
-  --build-arg VLLM_BUILD_PIPELINE=local \
-  --build-arg VLLM_BUILD_URL=https://github.com/ormandj/vllm-deepseek-v4-flash-sm120 \
+  --build-arg VLLM_BUILD_PIPELINE="${BUILD_PIPELINE:-local}" \
+  --build-arg VLLM_BUILD_URL="${BUILD_URL:-https://github.com/ormandj/vllm-deepseek-v4-flash-sm120}" \
   --build-arg VLLM_IMAGE_TAG="$image" \
   --build-arg INTEGRATION_BUILD_PROFILE="$profile" \
   --build-arg INTEGRATION_PATCH_MANIFEST="$patch_manifest" \
