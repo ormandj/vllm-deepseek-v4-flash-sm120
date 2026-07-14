@@ -23,21 +23,52 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, x64, sm120-builder]
-    timeout-minutes: 240
+    # This build uses only an ephemeral GitHub-hosted VM. It is intentionally
+    # not eligible for any self-hosted runner.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Reclaim runner disk space
+        run: |
+          # The CUDA toolchain and final runtime image are large. These SDKs are
+          # unrelated to the build and the VM is discarded after this job.
+          sudo rm -rf \
+            /opt/hostedtoolcache \
+            /opt/ghc \
+            /usr/local/lib/android \
+            /usr/share/dotnet
+          docker system prune --all --force
+          df -h /
       - name: Log in to GHCR
         run: |
-          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | podman login ghcr.io --username '${{ github.actor }}' --password-stdin
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io --username '${{ github.actor }}' --password-stdin
       - name: Build and push immutable and moving tags
         env:
           PROFILE: ${{ inputs.profile }}
         run: |
           short_vllm=$(python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["base_commit"][:10])')
+          unique="ghcr.io/${GITHUB_REPOSITORY}:build-${GITHUB_RUN_ID}-${PROFILE}"
           immutable="ghcr.io/${GITHUB_REPOSITORY}:$(date +%Y%m%d)-${short_vllm}-${PROFILE}"
           moving="ghcr.io/${GITHUB_REPOSITORY}:${PROFILE}"
-          MAX_JOBS=48 ./scripts/build.sh "$PROFILE" "$immutable"
-          podman push "$immutable"
-          podman tag "$immutable" "$moving"
-          podman push "$moving"
+          CONTAINER_ENGINE=docker \
+          MAX_JOBS=4 \
+          NVCC_THREADS=1 \
+          BUILD_PIPELINE="github-${GITHUB_RUN_ID}" \
+          BUILD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            ./scripts/build.sh "$PROFILE" "$unique"
+          docker push "$unique"
+          docker tag "$unique" "$immutable"
+          docker push "$immutable"
+          docker tag "$unique" "$moving"
+          docker push "$moving"
+
+          digest=$(docker buildx imagetools inspect "$unique" | awk '$1 == "Digest:" { print $2; exit }')
+          test -n "$digest"
+          {
+            echo "### Published image"
+            echo
+            echo "\`$unique@$digest\`"
+            echo
+            echo "Moving tag: \`$moving\`"
+          } >> "$GITHUB_STEP_SUMMARY"

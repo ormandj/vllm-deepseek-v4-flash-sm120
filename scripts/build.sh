@@ -8,6 +8,7 @@ fi
 
 profile=$1
 image=${2:-ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:$profile}
+container_engine=${CONTAINER_ENGINE:-podman}
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 vllm_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["base_commit"])')
 integration_commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || printf unknown)
@@ -22,7 +23,7 @@ git -C "$work/vllm" checkout "$vllm_commit"
 patch_manifest=$(sed -n 's/^PATCH_MANIFEST=//p' "$work/profile.env")
 [[ -n "$patch_manifest" ]] || { echo "missing PATCH_MANIFEST" >&2; exit 1; }
 
-podman build \
+"$container_engine" build \
   --file "$repo/Containerfile" \
   --target vllm-openai \
   --build-arg max_jobs="${MAX_JOBS:-$(nproc)}" \
