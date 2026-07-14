@@ -98,10 +98,11 @@ of every selected patch in OCI labels and environment variables.
 ### Current FlashInfer packaging constraint
 
 As of this lock, `flashinfer-python==0.6.14` is published but
-`flashinfer-cubin` remains at `0.6.13`. A `0.6.14` JIT-cache package exists for
-CUDA 13.0, not CUDA 13.3. The image therefore retains the tested 0.6.13 cubin,
-disables the package-version check, skips the unavailable cu133 cache, and JIT
-compiles the SM120 paths from the patched 0.6.14 source package.
+`flashinfer-cubin` remains at `0.6.13`. No `0.6.14` JIT-cache package is listed
+on the official CUDA 13.0 index, and no CUDA 13.3 index is published. The image
+therefore retains the tested 0.6.13 cubin, disables the package-version check,
+skips the unavailable cache, and JIT compiles the SM120 paths from the patched
+0.6.14 source package.
 
 ## Scope
 

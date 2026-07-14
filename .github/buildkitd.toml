@@ -1,0 +1,6 @@
+[worker.oci]
+  # vLLM's independent Rust, CUDA, DeepGEMM, extension, and runtime stages
+  # otherwise install their large dependency sets concurrently. A standard
+  # GitHub-hosted runner has enough storage for the build, but not for all of
+  # those transient extraction peaks at once.
+  max-parallelism = 1

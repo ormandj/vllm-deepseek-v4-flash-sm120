@@ -833,7 +833,7 @@ COPY requirements/cuda.txt /tmp/requirements-cuda.txt
 #
 # Only flashinfer-PYTHON is bumped; flashinfer-cubin stays at upstream's 0.6.13.
 # flashinfer published only flashinfer-python==0.6.14 to PyPI — flashinfer-cubin
-# has NO 0.6.14 (its latest is 0.6.13, verified 2026-07-08), so pinning cubin to
+# has NO 0.6.14 (its latest is 0.6.13, verified 2026-07-14), so pinning cubin to
 # 0.6.14 makes uv's resolve unsatisfiable and the build dies. The swa_topk_lens
 # fix is a Python-wrapper change (flashinfer/mla/_core.py); the cubin package is a
 # separate, optional set of pre-compiled sm_90/sm_100 cubins that this sm_120-only
@@ -862,7 +862,7 @@ RUN --mount=type=cache,target=/opt/uv/cache \
 
 # SM120 integration: flashinfer-python is pinned to 0.6.14 (DSv4 SM120 swa_topk_lens, see the
 # sed above) but flashinfer-cubin has no 0.6.14 on PyPI (latest 0.6.13, checked
-# 2026-07-08), so the two versions intentionally differ. flashinfer/jit/env.py
+# 2026-07-14), so the two versions intentionally differ. flashinfer/jit/env.py
 # hard-raises a RuntimeError at import when they mismatch; bypass it — the
 # pre-staged cubins target sm_90/sm_100 and are unused on this sm_120-only
 # runtime-JIT image (checksummed cubins are fetched/JIT'd at runtime as needed).
@@ -872,10 +872,10 @@ ENV FLASHINFER_DISABLE_VERSION_CHECK=1
 
 # SM120 integration: SKIP upstream's flashinfer-jit-cache install (upstream pins 0.6.13 here).
 # It pulls a prebuilt JIT cache from a CUDA-version-specific index
-# (https://flashinfer.ai/whl/cuXXX), but flashinfer publishes that wheel only up
-# to cu130 (re-verified 2026-07-08) — our CUDA 13.3.0 derives cu133, which 404s
-# and fails the build (`--index-url`, so it's fatal, not a soft extra-index). We
-# rely on flashinfer's runtime JIT instead, restricted to sm_120 via
+# (https://flashinfer.ai/whl/cuXXX). The cu130 index has no 0.6.14 package and a
+# cu133 index is not published (re-verified 2026-07-14), so installing a cache
+# matching this Python/CUDA stack cannot resolve. We rely on flashinfer's
+# runtime JIT instead, restricted to sm_120 via
 # `ENV FLASHINFER_CUDA_ARCH_LIST=12.0f` (set below); kernels compile on first
 # use and are cached to disk thereafter. flashinfer-python / -cubin still
 # install normally from PyPI via the requirements above.
