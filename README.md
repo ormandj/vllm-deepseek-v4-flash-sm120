@@ -55,7 +55,7 @@ same cache only with the same image digest and profile.
 |---|---|---|
 | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | DeepSeek-family MXFP4 → FlashInfer CUTLASS MoE wiring | Controlled serving A/B |
 | [FlashInfer #3903](https://github.com/flashinfer-ai/flashinfer/pull/3903) + temporary vLLM selector | SM120/121 TensorRT-LLM all-reduce | Controlled joint-stack A/B |
-| [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) + [exact signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Select the real CUDA runtime instead of TileLang's stub | Live failure/recovery + 12 CPU tests |
+| [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) + [exact signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Reject the reproduced TileLang CUDA-stub look-alike during runtime resolution | Live failure/recovery + 12 CPU tests |
 | [vLLM #48317](https://github.com/vllm-project/vllm/pull/48317) | Correct packed/hybrid KV-capacity reporting | Source inspection + focused tests; no performance claim |
 | [vLLM #48304](https://github.com/vllm-project/vllm/pull/48304) | Honor the DSpark checkpoint's draft-layer rope semantics | Same-configuration acceptance result + focused tests |
 | [FlashInfer #3817](https://github.com/flashinfer-ai/flashinfer/pull/3817) and [#3834](https://github.com/flashinfer-ai/flashinfer/pull/3834) | TOPK=256 decode/prefill instantiations required by DSpark on SM120 | Dispatch/reference correctness + serving completion |
