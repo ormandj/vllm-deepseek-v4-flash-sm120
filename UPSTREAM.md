@@ -11,7 +11,7 @@ series.
 | KV reporting | [vLLM #48317](https://github.com/vllm-project/vllm/pull/48317) | Makes packed/hybrid capacity reporting agree across worker and scheduler shapes. Request execution is unchanged. | Review, `ready` label, full CI, merge. |
 | DSpark TOPK=256 | [FlashInfer #3817](https://github.com/flashinfer-ai/flashinfer/pull/3817) + [#3834](https://github.com/flashinfer-ai/flashinfer/pull/3834) | Adds the missing decode and prefill instantiations used by the DSpark draft. Both halves are required. | Authorized CI, review, merge both. |
 | SM12x all-reduce | [FlashInfer #3903](https://github.com/flashinfer-ai/flashinfer/pull/3903) | Adds the SM120/121 TensorRT-LLM workspace and corrects the legacy Lamport pointer layout. | Authorized CI, review, merge. |
-| CUDA runtime resolution | [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) + [signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Prevents a loaded `libcudart_stub.so` from shadowing the real runtime during workspace initialization. | Adopt the exact matcher/tests, run authorized CI, merge. |
+| CUDA runtime resolution | [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) + [signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Prevents a loaded `libcudart_stub.so` from being accepted as the CUDA runtime during workspace initialization. | Adopt the exact matcher/tests, run authorized CI, merge. |
 
 ## Dependency order
 
