@@ -1,7 +1,7 @@
 This repository includes a Containerfile derived from vLLM and source patches
 derived from vLLM and FlashInfer pull requests. Both upstream projects are
-licensed under Apache-2.0. Patch headers and stack.lock.json retain the source
-pull requests, authorship, commit identifiers, and local adaptations.
+licensed under Apache-2.0. Patch headers retain the source pull requests,
+authorship, commit identifiers, and local adaptations.
 
 The integration documentation and build scripts were prepared with AI
 assistance (OpenAI Codex) under the repository owner's direction and review.

@@ -13,7 +13,6 @@ if [[ $# -eq 0 ]]; then
 else
   images=("$@")
 fi
-image=${images[0]}
 container_engine=${CONTAINER_ENGINE:-podman}
 if command -v nproc >/dev/null 2>&1; then
   detected_jobs=$(nproc)
@@ -24,17 +23,12 @@ max_jobs=${MAX_JOBS:-$detected_jobs}
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 vllm_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["base_commit"])')
 native_wheel_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["native_wheel_commit"])')
-integration_commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || printf unknown)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 git clone --filter=blob:none https://github.com/vllm-project/vllm.git "$work/vllm"
 git -C "$work/vllm" checkout "$vllm_commit"
-"$repo/scripts/apply-build-profile.sh" \
-  "$profile" "$work/vllm" "$repo" "$work/profile.env"
-
-patch_manifest=$(sed -n 's/^PATCH_MANIFEST=//p' "$work/profile.env")
-[[ -n "$patch_manifest" ]] || { echo "missing PATCH_MANIFEST" >&2; exit 1; }
+"$repo/scripts/apply-build-profile.sh" "$profile" "$work/vllm" "$repo"
 
 build_command=("$container_engine" build)
 output_args=()
@@ -70,12 +64,6 @@ done
   --build-arg VLLM_MERGE_BASE_COMMIT="$native_wheel_commit" \
   --build-arg VLLM_BUILD_COMMIT="$vllm_commit" \
   --build-arg VLLM_NATIVE_WHEEL_COMMIT="$native_wheel_commit" \
-  --build-arg VLLM_BUILD_PIPELINE="${BUILD_PIPELINE:-local}" \
-  --build-arg VLLM_BUILD_URL="${BUILD_URL:-https://github.com/ormandj/vllm-deepseek-v4-flash-sm120}" \
-  --build-arg VLLM_IMAGE_TAG="$image" \
-  --build-arg INTEGRATION_BUILD_PROFILE="$profile" \
-  --build-arg INTEGRATION_PATCH_MANIFEST="$patch_manifest" \
-  --build-arg INTEGRATION_BUILD_COMMIT="$integration_commit" \
   "${tag_args[@]}" \
   "${output_args[@]}" \
   "$work/vllm"
