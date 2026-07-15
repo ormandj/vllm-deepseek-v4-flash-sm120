@@ -50,6 +50,10 @@ The launcher derives the CUDA graph shapes from `MTP_TOKENS` and
 `MAX_NUM_SEQS`. With the tested MTP:2/C32 defaults it captures through 96;
 using a graph cap of 48 causes a large C32 eager-fallback regression.
 
+Measured with the recommended MTP:2 settings above: **11.55 GiB available KV
+memory**, **1,666,236 corrected KV tokens**, and **1.61× maximum concurrency**
+at the configured 1,032,192-token model length. CUDA graphs used 1.00 GiB.
+
 ## Run the DSpark profile
 
 Use the DSpark checkpoint with the `:dspark` image. The current checkpoint has
@@ -117,12 +121,12 @@ prefix caching, chunked prefill, and full/piecewise breakable CUDA graphs.
 | `:mtp`, MTP:2, graph cap 96 | **203.81** | **330.30** | **503.62** | **723.94** | **1,045.06** | **1,558.09** |
 | `:mtp`, MTP:3, graph cap 128 | 192.00 | 321.31 | 467.78 | 672.71 | 967.83 | 1,471.83 |
 
-| Profile | 8K prefill | 64K prefill | 128K prefill | Reported KV tokens |
-|---|---:|---:|---:|---:|
-| `:control`, MTP:0 | 8,549 | 8,137 | 7,414 | 2,019,563 |
-| `:mtp`, MTP:0 | 8,724 | 8,425 | 7,700 | 1,914,292 |
-| `:mtp`, MTP:2 | 8,428 | 8,230 | 7,513 | 1,666,236 |
-| `:mtp`, MTP:3 | 8,479 | 8,236 | 7,522 | 1,666,236 |
+| Profile | 8K prefill | 64K prefill | 128K prefill | Available KV | Reported KV tokens |
+|---|---:|---:|---:|---:|---:|
+| `:control`, MTP:0 | 8,549 | 8,137 | 7,414 | 13.26 GiB | 2,019,563 |
+| `:mtp`, MTP:0 | 8,724 | 8,425 | 7,700 | 13.26 GiB | 1,914,292 |
+| `:mtp`, MTP:2 | 8,428 | 8,230 | 7,513 | 11.55 GiB | 1,666,236 |
+| `:mtp`, MTP:3 | 8,479 | 8,236 | 7,522 | 11.55 GiB | 1,666,236 |
 
 MTP:2 is the current recommendation. MTP:3 was 2.72%-7.39% slower at every
 decode concurrency. MTP:2 accepted 65.05% of drafted tokens and averaged
