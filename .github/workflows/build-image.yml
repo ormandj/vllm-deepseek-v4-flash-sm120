@@ -105,24 +105,15 @@ jobs:
           BUILDX_PUSH=1 \
           MAX_JOBS=4 \
           NVCC_THREADS=1 \
-          BUILD_PIPELINE="github-${GITHUB_RUN_ID}" \
-          BUILD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             ./scripts/build.sh "$PROFILE" "$image"
 
-          digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" { print $2; exit }')
-          test -n "$digest"
           raw_manifest=$(mktemp)
           docker buildx imagetools inspect --raw "$image" > "$raw_manifest"
           if jq -e 'has("manifests")' "$raw_manifest" >/dev/null; then
-            echo "$image is an OCI index; expected a directly pullable linux/amd64 image manifest" >&2
+            echo "$image is an OCI index; expected a directly pullable image manifest" >&2
             exit 1
           fi
           jq -e '.config.digest and (.layers | length > 0)' "$raw_manifest" >/dev/null
-          {
-            echo "### Published image"
-            echo
-            echo "\`$image@$digest\`"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Delete superseded package versions
         env:

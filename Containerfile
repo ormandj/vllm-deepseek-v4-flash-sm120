@@ -991,7 +991,7 @@ RUN --mount=type=cache,target=/opt/uv/cache \
 
 # SM120 integration: optionally carry up to three open FlashInfer PRs and one resolver
 # fix as source patches on the installed 0.6.14 wheel. The build profile stages
-# only its selected files (see patches-flashinfer/*.patch provenance headers):
+# only its selected files from patches-flashinfer/:
 #   * fi-3817 (vedcsolution, community) — TOPK=256 decode-dsv4 instantiation
 #     for SM120 sparse MLA; unblocks DSpark draft decode.
 #   * fi-3834 (waynehacking8) — TOPK=256 prefill-dsv4 instantiation for SM120
@@ -1176,13 +1176,6 @@ ARG INSTALL_KV_CONNECTORS=false
 ARG CUDA_VERSION
 ARG VLLM_BUILD_COMMIT
 ARG VLLM_NATIVE_WHEEL_COMMIT=unknown
-ARG VLLM_BUILD_PIPELINE
-ARG VLLM_BUILD_URL
-ARG VLLM_IMAGE_TAG
-ARG INTEGRATION_BUILD_PROFILE=unknown
-ARG INTEGRATION_PATCH_MANIFEST=unknown
-ARG INTEGRATION_BUILD_COMMIT=unknown
-ARG INTEGRATION_SOURCE=https://github.com/ormandj/vllm-deepseek-v4-flash-sm120
 
 ARG PIP_INDEX_URL UV_INDEX_URL
 ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
@@ -1241,26 +1234,6 @@ RUN if [ "$INSTALL_KV_CONNECTORS" = "true" ]; then \
     fi
 
 ENV VLLM_USAGE_SOURCE production-docker-image
-ENV VLLM_BUILD_COMMIT=${VLLM_BUILD_COMMIT:-unknown} \
-    INTEGRATION_NATIVE_WHEEL_COMMIT=${VLLM_NATIVE_WHEEL_COMMIT} \
-    VLLM_BUILD_PIPELINE=${VLLM_BUILD_PIPELINE:-local} \
-    VLLM_BUILD_URL=${VLLM_BUILD_URL:-} \
-    VLLM_IMAGE_TAG=${VLLM_IMAGE_TAG:-local/vllm-openai:dev} \
-    INTEGRATION_BUILD_PROFILE=${INTEGRATION_BUILD_PROFILE} \
-    INTEGRATION_PATCH_MANIFEST=${INTEGRATION_PATCH_MANIFEST} \
-    INTEGRATION_BUILD_COMMIT=${INTEGRATION_BUILD_COMMIT}
-LABEL org.opencontainers.image.source="${INTEGRATION_SOURCE}" \
-      org.opencontainers.image.revision="${INTEGRATION_BUILD_COMMIT}" \
-      org.opencontainers.image.version="${VLLM_IMAGE_TAG}" \
-      org.opencontainers.image.url="${VLLM_BUILD_URL}" \
-      ai.vllm.upstream.commit="${VLLM_BUILD_COMMIT}" \
-      ai.vllm.native-wheel.commit="${VLLM_NATIVE_WHEEL_COMMIT}" \
-      ai.vllm.integration.commit="${INTEGRATION_BUILD_COMMIT}" \
-      ai.vllm.build.pipeline="${VLLM_BUILD_PIPELINE}" \
-      ai.vllm.build.url="${VLLM_BUILD_URL}" \
-      ai.vllm.image.tag="${VLLM_IMAGE_TAG}" \
-      ai.vllm.build.profile="${INTEGRATION_BUILD_PROFILE}" \
-      ai.vllm.build.patches="${INTEGRATION_PATCH_MANIFEST}"
 
 # define sagemaker first, so it is not default from `docker build`
 FROM vllm-openai-base AS vllm-sagemaker
