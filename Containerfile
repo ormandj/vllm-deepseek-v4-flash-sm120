@@ -607,7 +607,7 @@ COPY .buildkite/check-wheel-size.py check-wheel-size.py
 # sync the default value with .buildkite/check-wheel-size.py
 ARG VLLM_MAX_SIZE_MB=500
 ENV VLLM_MAX_SIZE_MB=$VLLM_MAX_SIZE_MB
-ARG RUN_WHEEL_CHECK=false
+ARG RUN_WHEEL_CHECK=true
 RUN if [ "$RUN_WHEEL_CHECK" = "true" ]; then \
         python3 check-wheel-size.py dist; \
     else \
@@ -817,7 +817,7 @@ COPY requirements/cuda.txt /tmp/requirements-cuda.txt
 # leaving base files that break CUDA 13 CuTe DSL JIT.
 # TODO(mmangkad): Remove this after NVIDIA/cutlass#3259 is fixed.
 #
-# SM120 integration: bump the FlashInfer Python and cubin pins to 0.6.14 before installing.
+# SM120 integration: require the FlashInfer Python and cubin pins to be 0.6.14.
 # vLLM main since #43477 (the SM120 DSv4 enablement, 2026-06-23) calls
 # flashinfer.mla trtllm_batch_decode_sparse_mla_dsv4(..., swa_topk_lens=...),
 # an argument that ONLY exists in flashinfer >= 0.6.14 (added in
@@ -825,11 +825,9 @@ COPY requirements/cuda.txt /tmp/requirements-cuda.txt
 # pins 0.6.13, so the DSv4 SM120 decode path crashes at memory-profiling with
 # "trtllm_batch_decode_sparse_mla_dsv4() got an unexpected keyword argument
 # 'swa_topk_lens'" (verified vllm-c 2026-07-08). 0.6.14 released 2026-07-02 and
-# is the latest. Upstream is already bumping its own pin (vllm PR #47669, open
-# 2026-07-08), so this override is a stopgap: once that merges the sed no-ops
-# and the grep-assert below still passes. The grep asserts the pin is 0.6.14
-# after the sed so we fail loudly if upstream jumps PAST it (e.g. 0.6.15 —
-# re-verify swa_topk_lens compat then).
+# is the latest. The common build patch carries the requirements portion of
+# vLLM #47669 so the rebuilt wheel metadata and installed packages agree. The
+# assertions fail loudly when upstream changes the pins.
 #
 # PyPI publishes flashinfer-python 0.6.14 but stops at flashinfer-cubin 0.6.13.
 # FlashInfer's official top-level index publishes the matching 0.6.14 cubin, so
@@ -839,10 +837,8 @@ RUN --mount=type=cache,target=/opt/uv/cache \
         sed -i 's/^nvidia-cutlass-dsl\[cu13\]/nvidia-cutlass-dsl/' /tmp/requirements-cuda.txt; \
         sed -i 's/^humming-kernels\[cu13\]/humming-kernels[cu12]/' /tmp/requirements-cuda.txt; \
     fi && \
-    sed -i 's/^flashinfer-python==0\.6\.13/flashinfer-python==0.6.14/' /tmp/requirements-cuda.txt && \
-    sed -i 's/^flashinfer-cubin==0\.6\.13/flashinfer-cubin==0.6.14/' /tmp/requirements-cuda.txt && \
-    grep -q '^flashinfer-python==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.14 after sed — upstream moved the pin; re-verify swa_topk_lens compat before adjusting"; exit 1; } && \
-    grep -q '^flashinfer-cubin==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.14 after sed — upstream moved the pin; re-verify the package indexes before adjusting"; exit 1; } && \
+    grep -q '^flashinfer-python==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.14"; exit 1; } && \
+    grep -q '^flashinfer-cubin==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.14"; exit 1; } && \
     uv pip install --system -r /tmp/requirements-cuda.txt \
         --index https://flashinfer.ai/whl \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
@@ -967,28 +963,6 @@ RUN --mount=type=cache,target=/opt/uv/cache \
         fi; \
     fi
 
-# SM120 integration: RE-PIN FlashInfer Python and cubin to 0.6.14. The earlier
-# sed bumps them in /tmp/requirements-cuda.txt, but that only patches the throwaway copy
-# used for the standalone requirements install — NOT the vLLM source tree the wheel is
-# built from. vLLM's own requirements/cuda.txt pins both packages at 0.6.13, so those
-# pins are baked into the wheel's dependency metadata; `uv pip install dist/*.whl` (and
-# the ep-kernels install) can then re-resolve and downgrade the 0.6.14 packages,
-# silently reverting the bump. A downgraded Python package crashes at memory-profiling with
-# "trtllm_batch_decode_sparse_mla_dsv4() got an unexpected keyword argument 'swa_topk_lens'"
-# (verified vllm-c 2026-07-08, flashinfer-python=0.6.13 in the shipped image). Force
-# both packages back here, AFTER every install that could re-resolve them; --no-deps so
-# this drags nothing else. The matching cubin comes from FlashInfer's official
-# index because PyPI does not publish cubin 0.6.14. These installs become no-ops
-# once upstream pins the same release and sources both packages there.
-RUN --mount=type=cache,target=/opt/uv/cache \
-    uv pip install --system --force-reinstall --no-deps \
-        --index https://flashinfer.ai/whl \
-        flashinfer-python==0.6.14 flashinfer-cubin==0.6.14 && \
-    PYTHON_VERSION_INSTALLED=$(uv pip show --system flashinfer-python 2>/dev/null | awk '/^Version:/{print $2}') && \
-    CUBIN_VERSION_INSTALLED=$(uv pip show --system flashinfer-cubin 2>/dev/null | awk '/^Version:/{print $2}') && \
-    [ "$PYTHON_VERSION_INSTALLED" = "0.6.14" ] || { echo "FATAL: flashinfer-python is $PYTHON_VERSION_INSTALLED, expected 0.6.14 after force-reinstall"; exit 1; } && \
-    [ "$CUBIN_VERSION_INSTALLED" = "0.6.14" ] || { echo "FATAL: flashinfer-cubin is $CUBIN_VERSION_INSTALLED, expected 0.6.14 after force-reinstall"; exit 1; }
-
 # SM120 integration: optionally carry up to three open FlashInfer PRs and one resolver
 # fix as source patches on the installed 0.6.14 wheel. The build profile stages
 # only its selected files from patches-flashinfer/:
@@ -1005,9 +979,8 @@ RUN --mount=type=cache,target=/opt/uv/cache \
 # All are pre-rewritten to the wheel layout (git csrc/ + include/ live under
 # flashinfer/data/ when installed) and verified `patch -p1 --dry-run` clean
 # against a pristine 0.6.14 wheel; test hunks are stripped (not shipped in the
-# wheel). MUST run after the flashinfer-python force-reinstall above — that
-# re-extracts the wheel and would wipe anything patched earlier. The patched
-# .cu/.cuh sources take effect via flashinfer's runtime JIT (this image builds
+# wheel). The patched .cu/.cuh sources take effect via FlashInfer's runtime JIT
+# (this image builds
 # kernels on first use; no prebuilt cubins are involved). Conditional smoke
 # tests fail the build if a selected Python-visible patch silently regresses:
 # topk-256 decode
@@ -1058,10 +1031,9 @@ p=patch('builtins.open', return_value=io.StringIO(good)); p.start(); \
 assert find_loaded_library('libcudart') == '/tmp/libcudart-a1b2c3.so.13.0'; \
 p.stop(); print('flashinfer CUDA IPC resolver patch smoke OK')"; \
     fi && \
-    rm -rf /tmp/patches-flashinfer
-
-# SM120 integration: upstream's `flashinfer download-cubin` RUN block removed here — upstream
-# dropped it on main (a 2.5 GB layer-dup fix); sm_120 relies on runtime JIT anyway.
+    uv pip check --system && \
+    apt-get purge -y patch && \
+    rm -rf /var/lib/apt/lists/* /tmp/patches-flashinfer
 
 # CUDA image changed from /usr/local/nvidia to /usr/local/cuda in 12.8 but will
 # return to /usr/local/nvidia in 13.0 to allow container providers to mount drivers

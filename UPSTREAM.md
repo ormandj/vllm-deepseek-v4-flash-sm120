@@ -6,6 +6,7 @@ series.
 
 | Path | Upstream work | Why it matters | Merge ask |
 |---|---|---|---|
+| FlashInfer packaging | [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) | Aligns vLLM with FlashInfer 0.6.14, required by the enabled DSv4 sparse-MLA API. This integration carries only its requirements update. | Resolve the remaining review blocker, run full CI, merge. |
 | MXFP4 MoE | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | Enables the explicitly selected FlashInfer CUTLASS backend for DeepSeek-family MXFP4 and removes gpt-oss-specific activation constants from other models. | Review, `ready` label, full CI, merge. |
 | DSpark draft semantics | [vLLM #48304](https://github.com/vllm-project/vllm/pull/48304) | Honors the checkpoint's in-range draft `compress_ratios=0` entry without violating KV arithmetic; preserves fallback behavior. | Review, `ready` label, full CI, merge. |
 | KV reporting | [vLLM #48317](https://github.com/vllm-project/vllm/pull/48317) | Makes packed/hybrid capacity reporting agree across worker and scheduler shapes. Request execution is unchanged. | Review, `ready` label, full CI, merge. |

@@ -2,8 +2,8 @@
   "schema": 1,
   "vllm": {
     "repository": "https://github.com/vllm-project/vllm",
-    "base_commit": "ecf4aa5ce2ccd4069f12318ca9d3fcef7c9f6257",
-    "native_wheel_commit": "ecf4aa5ce2ccd4069f12318ca9d3fcef7c9f6257"
+    "base_commit": "3034c8d389edaf4a131c30304eee76bb9aef5022",
+    "native_wheel_commit": "5810e884f11875b46fbae0871754d855d8891105"
   },
   "flashinfer": {
     "repository": "https://github.com/flashinfer-ai/flashinfer",
@@ -11,7 +11,7 @@
     "package_cubin": "flashinfer-cubin==0.6.14"
   },
   "profiles": {
-    "control": "Pinned vLLM base with the same image toolchain and no source carries.",
+    "control": "Locked vLLM base with matched FlashInfer packaging and no performance source carries.",
     "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
     "dspark": "mtp + #48304 + FlashInfer #3817 and #3834."
   }

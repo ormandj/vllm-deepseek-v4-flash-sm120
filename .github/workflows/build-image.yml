@@ -29,6 +29,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Verify exact native wheel is available
+        run: bash scripts/verify-native-wheel.sh
       - name: Reclaim runner disk space
         run: |
           # The CUDA toolchain and final runtime image are large. These SDKs are

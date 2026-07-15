@@ -334,6 +334,7 @@ and carries focused fixes while they are under upstream review:
 
 | Component | Role |
 |---|---|
+| [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) requirements update | Keep the required FlashInfer 0.6.14 packages aligned with the rebuilt vLLM wheel metadata |
 | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | DeepSeek-family MXFP4 to FlashInfer CUTLASS MoE wiring |
 | [FlashInfer #3903](https://github.com/flashinfer-ai/flashinfer/pull/3903) plus the temporary vLLM selector | SM120/121 TensorRT-LLM all-reduce |
 | [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) plus the [signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Reject the reproduced CUDA-stub look-alike during runtime resolution |
@@ -365,10 +366,12 @@ The build is SM120-only and expensive:
 MAX_JOBS=48 ./scripts/build.sh mtp local/dsv4-sm120:mtp
 ```
 
-The image uses vLLM's exact-commit official native wheel and packages patched
-Python source around the same commit. It installs matched
-`flashinfer-python==0.6.14` and `flashinfer-cubin==0.6.14`; the cubin is fetched
-from FlashInfer's official index because PyPI stops at 0.6.13.
+The image uses the newest published ancestor native wheel after verifying that
+no native build inputs changed through the locked vLLM source commit. It then
+packages the locked Python source and selected carries around that wheel. It
+installs matched `flashinfer-python==0.6.14` and
+`flashinfer-cubin==0.6.14`; the cubin is fetched from FlashInfer's official
+index because PyPI stops at 0.6.13.
 
 ## Scope
 

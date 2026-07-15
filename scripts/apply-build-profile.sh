@@ -13,6 +13,10 @@ repository=$3
 vllm_patches=()
 flashinfer_patches=()
 
+common_vllm_patches=(
+  vllm-47669-flashinfer-0.6.14-requirements.patch
+)
+
 case "$profile" in
   control)
     ;;
@@ -49,7 +53,7 @@ esac
 
 mkdir -p "$vllm_source/patches-flashinfer"
 
-for name in "${vllm_patches[@]}"; do
+for name in "${common_vllm_patches[@]}" "${vllm_patches[@]}"; do
   path="$repository/patches/vllm/$name"
   [[ -f "$path" ]] || { echo "missing vLLM patch: $path" >&2; exit 1; }
   echo "Applying vLLM patch $name" >&2
