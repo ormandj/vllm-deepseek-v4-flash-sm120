@@ -840,7 +840,6 @@ RUN --mount=type=cache,target=/opt/uv/cache \
     grep -q '^flashinfer-python==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.14"; exit 1; } && \
     grep -q '^flashinfer-cubin==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.14"; exit 1; } && \
     uv pip install --system -r /tmp/requirements-cuda.txt \
-        --index https://flashinfer.ai/whl \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
     if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "13" ]; then \
         CUTLASS_DSL_VERSION=$(uv pip show --system nvidia-cutlass-dsl 2>/dev/null | awk '/^Version:/{print $2}') && \
