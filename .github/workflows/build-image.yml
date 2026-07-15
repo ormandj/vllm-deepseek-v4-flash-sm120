@@ -7,11 +7,11 @@ on:
         description: Build profile
         required: true
         type: choice
-        default: agentic-mtp0
+        default: mtp
         options:
           - control
-          - agentic-mtp0
-          - dspark-preview
+          - mtp
+          - dspark
 
 permissions:
   contents: read
@@ -52,14 +52,11 @@ jobs:
             --use \
             --bootstrap
           docker buildx inspect sm120-builder
-      - name: Build and push immutable and moving tags
+      - name: Build and push canonical tag
         env:
           PROFILE: ${{ inputs.profile }}
         run: |
-          short_vllm=$(python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["base_commit"][:10])')
-          unique="ghcr.io/${GITHUB_REPOSITORY}:build-${GITHUB_RUN_ID}-${PROFILE}"
-          immutable="ghcr.io/${GITHUB_REPOSITORY}:$(date +%Y%m%d)-${short_vllm}-${PROFILE}"
-          moving="ghcr.io/${GITHUB_REPOSITORY}:${PROFILE}"
+          image="ghcr.io/${GITHUB_REPOSITORY}:${PROFILE}"
           CONTAINER_ENGINE=docker \
           BUILDX_BUILDER=sm120-builder \
           BUILDX_PUSH=1 \
@@ -67,14 +64,47 @@ jobs:
           NVCC_THREADS=1 \
           BUILD_PIPELINE="github-${GITHUB_RUN_ID}" \
           BUILD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-            ./scripts/build.sh "$PROFILE" "$unique" "$immutable" "$moving"
+            ./scripts/build.sh "$PROFILE" "$image"
 
-          digest=$(docker buildx imagetools inspect "$unique" | awk '$1 == "Digest:" { print $2; exit }')
+          digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" { print $2; exit }')
           test -n "$digest"
           {
             echo "### Published image"
             echo
-            echo "\`$unique@$digest\`"
-            echo
-            echo "Moving tag: \`$moving\`"
+            echo "\`$image@$digest\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete superseded package versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package=${GITHUB_REPOSITORY#*/}
+          owner=${GITHUB_REPOSITORY_OWNER}
+          gh api --paginate \
+            --jq '.[] | select((.metadata.container.tags | map(. == "control" or . == "mtp" or . == "dspark") | any) | not) | .id' \
+            "/users/${owner}/packages/container/${package}/versions?per_page=100" \
+            | while read -r id; do
+              gh api --method DELETE \
+                "/users/${owner}/packages/container/${package}/versions/${id}"
+            done
+
+      - name: Verify one version per canonical tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package=${GITHUB_REPOSITORY#*/}
+          owner=${GITHUB_REPOSITORY_OWNER}
+          versions=$(mktemp)
+          gh api \
+            "/users/${owner}/packages/container/${package}/versions?per_page=100" \
+            > "$versions"
+          version_count=$(jq 'length' "$versions")
+          tags=$(jq -r '.[].metadata.container.tags[]' "$versions" | sort -u)
+          tag_count=$(printf '%s\n' "$tags" | sed '/^$/d' | wc -l | tr -d ' ')
+          test "$version_count" -eq "$tag_count"
+          jq -e 'all(.[]; (.metadata.container.tags | length) == 1)' \
+            "$versions" >/dev/null
+          if printf '%s\n' "$tags" | grep -Evq '^(control|mtp|dspark)$'; then
+            echo "unexpected package tag remains" >&2
+            exit 1
+          fi

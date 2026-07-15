@@ -37,7 +37,7 @@
   },
   "profiles": {
     "control": "Pinned vLLM base with the same image toolchain and no source carries.",
-    "agentic-mtp0": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
-    "dspark-preview": "agentic-mtp0 + #48304 + FlashInfer #3817 and #3834. Preview until speculative-path selection is complete."
+    "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
+    "dspark": "mtp + #48304 + FlashInfer #3817 and #3834."
   }
 }

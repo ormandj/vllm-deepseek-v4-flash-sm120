@@ -4,17 +4,33 @@ set -euo pipefail
 : "${MODEL_DIR:?set MODEL_DIR to a local DeepSeek-V4-Flash snapshot}"
 : "${CACHE_DIR:?set CACHE_DIR to a persistent, image-specific cache directory}"
 
-IMAGE=${IMAGE:-ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:agentic-mtp0}
+IMAGE=${IMAGE:-ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:mtp}
+MTP_TOKENS=${MTP_TOKENS:-2}
+DRAFT_SAMPLE_METHOD=${DRAFT_SAMPLE_METHOD:-probabilistic}
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-1032192}
 MAX_NUM_SEQS=${MAX_NUM_SEQS:-32}
 MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-4096}
 GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.944}
 NCCL_P2P_LEVEL=${NCCL_P2P_LEVEL:-SYS}
 
+if ! [[ "$MTP_TOKENS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "MTP_TOKENS must be a positive integer" >&2
+  exit 2
+fi
+if [[ "$DRAFT_SAMPLE_METHOD" != "greedy" \
+      && "$DRAFT_SAMPLE_METHOD" != "probabilistic" ]]; then
+  echo "DRAFT_SAMPLE_METHOD must be greedy or probabilistic" >&2
+  exit 2
+fi
+
 mkdir -p "$CACHE_DIR"
 
+speculative_config=$(printf \
+  '{"method":"mtp","num_speculative_tokens":%s,"draft_sample_method":"%s"}' \
+  "$MTP_TOKENS" "$DRAFT_SAMPLE_METHOD")
+
 exec docker run --rm \
-  --name dsv4-sm120-agentic-mtp0 \
+  --name dsv4-sm120-mtp \
   --gpus all \
   --ipc host \
   --ulimit memlock=-1 \
@@ -58,6 +74,7 @@ exec docker run --rm \
   --max-num-seqs "$MAX_NUM_SEQS" \
   --max-num-batched-tokens "$MAX_NUM_BATCHED_TOKENS" \
   --max-cudagraph-capture-size 48 \
+  --speculative-config "$speculative_config" \
   --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"cudagraph_capture_sizes":[1,2,4,5,6,8,10,12,15,16,18,20,24,25,30,32,36,40,48]}' \
   --async-scheduling \
   --no-scheduler-reserve-full-isl \

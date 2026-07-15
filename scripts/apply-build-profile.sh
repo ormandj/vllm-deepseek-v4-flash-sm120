@@ -17,7 +17,7 @@ flashinfer_patches=()
 case "$profile" in
   control)
     ;;
-  agentic-mtp0)
+  mtp)
     vllm_patches=(
       vllm-48303-mxfp4-flashinfer-cutlass.patch
       vllm-sm12x-flashinfer-allreduce-selector.patch
@@ -28,7 +28,7 @@ case "$profile" in
       fi-3930-cuda-runtime-resolver.patch
     )
     ;;
-  dspark-preview)
+  dspark)
     vllm_patches=(
       vllm-48303-mxfp4-flashinfer-cutlass.patch
       vllm-48304-mtp-draft-rope.patch
