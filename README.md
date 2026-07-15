@@ -60,14 +60,17 @@ persistent; later starts reuse it. The server is ready when the log says
 | Scheduler batch budget | 4,096 configured / 3,968 effective |
 | CUDA graph maximum | 192 |
 | Available KV memory | 7.70 GiB |
-| Corrected KV capacity | 1,072,719 tokens |
+| Physical KV blocks | 7,676 GPU blocks |
 | Max-context capacity | 1.04× a 1,032,192-token request |
+| Max-context-equivalent capacity | 1,072,719 tokens |
 | CUDA graph memory | 1.13 GiB |
 
 `1,032,192` is the per-request model limit: the checkpoint's 1,048,576-token
 window minus a 16,384-token operating reserve, aligned to the 256-token KV
-block size. The reported KV total is the aggregate pool, not a promise that
-multiple maximum-length requests fit simultaneously.
+block size. For this model's hybrid KV layout, vLLM's reported token capacity
+means `maximum-context concurrency × configured maximum context`; it is not a
+context-independent total-token pool. Compare physical KV bytes and GPU blocks
+when evaluating profiles with different context limits.
 
 ### Expected performance
 
@@ -159,7 +162,7 @@ server limits. The v10 comparison image was
 | v10, MTP:2 | 210.00 | 310.30 | 479.08 | 678.26 | 965.77 | 1,377.55 | 212.45 |
 | v10, MTP:0 | 123.83 | 203.76 | 328.40 | 478.65 | 735.46 | 1,075.13 | 123.37 |
 
-| Profile | 8K prefill | 64K prefill | 128K prefill | Available KV | KV tokens |
+| Profile | 8K prefill | 64K prefill | 128K prefill | Available KV | Max-context-equivalent tokens |
 |---|---:|---:|---:|---:|---:|
 | `:dspark`, DSpark:5 | 8,566 | 8,400 | 7,655 | 7.70 GiB | 1,072,719 |
 | `:mtp`, MTP:2 | **8,907** | **8,618** | **7,945** | 11.55 GiB | 1,666,236 |
@@ -189,23 +192,24 @@ most of C4-C32, so the launcher retains probabilistic sampling.
 
 Greedy acceptance averaged 39.42% and 1.971 accepted tokens per draft versus
 39.77% and 1.988 for probabilistic. Both modes exposed the same 7.70 GiB /
-1,072,719-token KV pool and passed the sequential and C8 correctness checks.
+7,676-block KV pool and passed the sequential and C8 correctness checks.
 
 ### Scheduler batch budget
 
 At the recommended 1,032,192-token maximum context, configuring 8,192 batched
 tokens reduced available KV enough that the server could not admit one maximum-
 length request. A 4,224 setting restored an effective 4,096-token scheduler
-budget after DSpark's reservation, but lost 18,478 KV tokens and produced no
-consistent throughput improvement on repeat. The launcher therefore uses
+budget after DSpark's reservation, but reduced the physical KV pool from 7,676
+to 7,650 blocks and produced no consistent throughput improvement on repeat.
+The launcher therefore uses
 4,096 configured / 3,968 effective tokens.
 
-| Context limit | Configured batch | Effective batch | Available KV | Reported KV tokens | Startup |
-|---:|---:|---:|---:|---:|---|
-| 1,032,192 | 4,096 | 3,968 | 7.70 GiB | 1,072,719 | Pass |
-| 1,032,192 | 4,224 | 4,096 | 7.67 GiB | 1,054,241 | Pass |
-| 1,032,192 | 8,192 | 8,064 | 6.85 GiB | — | Fail |
-| 262,144 | 8,192 | 8,064 | 7.98 GiB | 270,682 | Pass at `gpu_memory_utilization=0.946` |
+| Context limit | Configured batch | Effective batch | Available KV | GPU blocks | Max-context-equivalent tokens | Startup |
+|---:|---:|---:|---:|---:|---:|---|
+| 1,032,192 | 4,096 | 3,968 | 7.70 GiB | 7,676 | 1,072,719 | Pass |
+| 1,032,192 | 4,224 | 4,096 | 7.67 GiB | 7,650 | 1,054,241 | Pass |
+| 1,032,192 | 8,192 | 8,064 | 6.85 GiB | — | — | Fail |
+| 262,144 | 8,192 | 8,064 | 7.98 GiB | 7,957 | 270,682 | Pass at `gpu_memory_utilization=0.946` |
 
 | C | Batch 4,096 / context 1,032,192 | Batch 4,224 / context 1,032,192 | Batch 8,192 / context 262,144 |
 |---:|---:|---:|---:|
@@ -218,16 +222,18 @@ consistent throughput improvement on repeat. The launcher therefore uses
 
 The 262,144/8,192 arm did not materially improve sustained decode. It raised
 the coding C1 median to 291.41 tok/s and cold-prefill throughput to
-8,929/8,776/7,975 tok/s at 8K/64K/128K, but vLLM reported only 270,682 usable
-KV tokens despite 7.98 GiB allocated. The recommended launcher therefore keeps
-the larger-context 4,096-token scheduler profile.
+8,929/8,776/7,975 tok/s at 8K/64K/128K. It actually exposed a larger physical
+KV pool: 7.98 GiB / 7,957 blocks versus 7.70 GiB / 7,676 blocks. Its smaller
+`270,682` token value only expresses capacity at the smaller configured maximum
+request. The recommended launcher keeps the larger-context 4,096-token profile
+because the smaller-context arm did not improve sustained decode.
 
 As a KV-capacity cross-check, the v10 v16 DSpark image
 `voipmonitor/vllm:fathomless-firmament-v16-vllm8f86f42-b12xfe06f49-fi801d57a-cu132-20260714`
-reported 7.92 GiB / 263,176 KV tokens on the same hardware with the same
-262,144-token context and 8,192-token scheduler budget. Our matching arm
-reported 7.98 GiB / 270,682 tokens, so there is no material v10 KV-capacity
-advantage under the matched shape.
+reported 7.92 GiB on the same hardware with the same 262,144-token context and
+8,192-token scheduler budget. Our matching arm reported 7.98 GiB. Their
+max-context-equivalent values were 263,176 and 270,682 respectively, so there
+is no material v10 physical-KV advantage under the matched shape.
 
 ### Agentic workload checks
 
