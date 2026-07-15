@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${MODEL_DIR:?set MODEL_DIR to a local DeepSeek-V4-Flash snapshot}"
+: "${MODEL_DIR:?set MODEL_DIR to a local DeepSeek-V4-Flash-DSpark snapshot}"
 : "${CACHE_DIR:?set CACHE_DIR to a persistent, image-specific cache directory}"
 
-IMAGE=${IMAGE:-ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:mtp}
-MTP_TOKENS=${MTP_TOKENS:-2}
+IMAGE=${IMAGE:-ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:dspark}
+DSPARK_TOKENS=${DSPARK_TOKENS:-5}
+DSPARK_BLOCK_SIZE=${DSPARK_BLOCK_SIZE:-5}
 DRAFT_SAMPLE_METHOD=${DRAFT_SAMPLE_METHOD:-probabilistic}
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-1032192}
 MAX_NUM_SEQS=${MAX_NUM_SEQS:-32}
@@ -13,8 +14,16 @@ MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-4096}
 GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.944}
 NCCL_P2P_LEVEL=${NCCL_P2P_LEVEL:-SYS}
 
-if ! [[ "$MTP_TOKENS" =~ ^[1-9][0-9]*$ ]]; then
-  echo "MTP_TOKENS must be a positive integer" >&2
+if ! [[ "$DSPARK_TOKENS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "DSPARK_TOKENS must be a positive integer" >&2
+  exit 2
+fi
+if ! [[ "$DSPARK_BLOCK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "DSPARK_BLOCK_SIZE must be a positive integer" >&2
+  exit 2
+fi
+if (( DSPARK_TOKENS < DSPARK_BLOCK_SIZE )); then
+  echo "DSPARK_TOKENS must be at least the checkpoint block size ($DSPARK_BLOCK_SIZE)" >&2
   exit 2
 fi
 if ! [[ "$MAX_NUM_SEQS" =~ ^[1-9][0-9]*$ ]] || (( MAX_NUM_SEQS > 32 )); then
@@ -30,14 +39,14 @@ fi
 mkdir -p "$CACHE_DIR"
 
 speculative_config=$(printf \
-  '{"method":"mtp","num_speculative_tokens":%s,"draft_sample_method":"%s"}' \
-  "$MTP_TOKENS" "$DRAFT_SAMPLE_METHOD")
+  '{"method":"dspark","num_speculative_tokens":%s,"draft_sample_method":"%s"}' \
+  "$DSPARK_TOKENS" "$DRAFT_SAMPLE_METHOD")
 
-# MTP schedules one target token plus MTP_TOKENS draft slots per request. Every
-# admitted concurrency therefore needs a graph at batch * (MTP_TOKENS + 1).
-# Including C32 avoids an eager fallback at the saturation check.
+# DSpark drafts its block in parallel and schedules DSPARK_TOKENS query slots
+# per request. Every admitted concurrency therefore needs a graph at
+# batch * DSPARK_TOKENS. Including C32 avoids an eager fallback at saturation.
 logical_capture_sizes=(1 2 3 4 5 6 7 8 9 10 11 12 14 16 22 27 32)
-capture_factor=$((MTP_TOKENS + 1))
+capture_factor=$DSPARK_TOKENS
 capture_sizes=()
 found_max=0
 for batch in "${logical_capture_sizes[@]}"; do
@@ -58,7 +67,7 @@ compilation_config=$(printf \
   "$capture_sizes_csv")
 
 exec docker run --rm \
-  --name dsv4-sm120-mtp \
+  --name dsv4-sm120-dspark \
   --gpus all \
   --ipc host \
   --ulimit memlock=-1 \
