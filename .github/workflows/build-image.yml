@@ -73,7 +73,19 @@ jobs:
           df -h / /mnt
       - name: Log in to GHCR
         run: |
-          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io --username '${{ github.actor }}' --password-stdin
+          for attempt in 1 2 3; do
+            if printf '%s' '${{ secrets.GITHUB_TOKEN }}' \
+              | docker login ghcr.io \
+                  --username '${{ github.actor }}' \
+                  --password-stdin; then
+              break
+            fi
+            if (( attempt == 3 )); then
+              echo "GHCR login failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep 10
+          done
       - name: Configure serialized BuildKit
         run: |
           docker buildx create \
