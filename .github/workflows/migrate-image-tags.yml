@@ -1,0 +1,94 @@
+name: Migrate canonical image tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      control_digest:
+        description: Existing control manifest digest
+        required: true
+        type: string
+      mtp_digest:
+        description: Existing MTP manifest digest
+        required: true
+        type: string
+      dspark_digest:
+        description: Existing DSpark manifest digest, if available
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Log in to GHCR
+        run: |
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io --username '${{ github.actor }}' --password-stdin
+
+      - name: Publish canonical manifests
+        env:
+          CONTROL_DIGEST: ${{ inputs.control_digest }}
+          MTP_DIGEST: ${{ inputs.mtp_digest }}
+          DSPARK_DIGEST: ${{ inputs.dspark_digest }}
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY}"
+          docker buildx imagetools create \
+            --annotation 'index:org.opencontainers.image.ref.name=control' \
+            --tag "${repository}:control" \
+            "${repository}@${CONTROL_DIGEST}"
+          docker buildx imagetools create \
+            --annotation 'index:org.opencontainers.image.ref.name=mtp' \
+            --tag "${repository}:mtp" \
+            "${repository}@${MTP_DIGEST}"
+          if [[ -n "$DSPARK_DIGEST" ]]; then
+            docker buildx imagetools create \
+              --annotation 'index:org.opencontainers.image.ref.name=dspark' \
+              --tag "${repository}:dspark" \
+              "${repository}@${DSPARK_DIGEST}"
+          fi
+
+      - name: Delete superseded package versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package=${GITHUB_REPOSITORY#*/}
+          owner=${GITHUB_REPOSITORY_OWNER}
+          gh api --paginate \
+            --jq '.[] | select((.metadata.container.tags | map(. == "control" or . == "mtp" or . == "dspark") | any) | not) | .id' \
+            "/users/${owner}/packages/container/${package}/versions?per_page=100" \
+            | while read -r id; do
+              gh api --method DELETE \
+                "/users/${owner}/packages/container/${package}/versions/${id}"
+            done
+
+      - name: Verify canonical tags and versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY}"
+          docker buildx imagetools inspect "${repository}:control"
+          docker buildx imagetools inspect "${repository}:mtp"
+          if [[ -n '${{ inputs.dspark_digest }}' ]]; then
+            docker buildx imagetools inspect "${repository}:dspark"
+          fi
+          package=${GITHUB_REPOSITORY#*/}
+          owner=${GITHUB_REPOSITORY_OWNER}
+          versions=$(mktemp)
+          gh api \
+            "/users/${owner}/packages/container/${package}/versions?per_page=100" \
+            > "$versions"
+          version_count=$(jq 'length' "$versions")
+          tags=$(jq -r '.[].metadata.container.tags[]' "$versions" | sort -u)
+          tag_count=$(printf '%s\n' "$tags" | sed '/^$/d' | wc -l | tr -d ' ')
+          test "$version_count" -eq "$tag_count"
+          jq -e 'all(.[]; (.metadata.container.tags | length) == 1)' \
+            "$versions" >/dev/null
+          if [[ -n '${{ inputs.dspark_digest }}' ]]; then
+            expected=$'control\ndspark\nmtp'
+          else
+            expected=$'control\nmtp'
+          fi
+          test "$tags" = "$expected"

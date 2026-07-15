@@ -17,13 +17,13 @@ under review upstream. Every source revision and patch digest is pinned in
 | Tag | Purpose |
 |---|---|
 | `ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:control` | Current pinned vLLM with the same CUDA/Python/FlashInfer toolchain and no source carries. |
-| `ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:agentic-mtp0` | Current recommended non-speculative stack. |
-| `ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:dspark-preview` | Adds the current DSpark prerequisites; preview until DSpark-vs-MTP tuning is complete. |
+| `ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:mtp` | Current recommended stack for the standard checkpoint and runtime-selected MTP width. |
+| `ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:dspark` | MTP stack plus the DSpark checkpoint prerequisites. |
 
-Use the immutable digest published in the release notes for repeatable tests.
-The moving tags are convenience aliases.
+Each tag has one current package version. Record its digest when exact
+reproduction matters; superseded package versions are removed.
 
-## Run the current agentic profile
+## Run the MTP profile
 
 Requirements:
 
@@ -35,9 +35,17 @@ Requirements:
 
 ```bash
 MODEL_DIR=/models/deepseek-ai/DeepSeek-V4-Flash \
-CACHE_DIR=/models/cache/dsv4-sm120-agentic-mtp0 \
-./examples/serve-agentic-mtp0.sh
+CACHE_DIR=/models/cache/dsv4-sm120-mtp \
+MTP_TOKENS=2 \
+./examples/serve-mtp.sh
 ```
+
+The image does not bake in the speculative width. Set `MTP_TOKENS` at runtime;
+use the same `:mtp` image for MTP:2, MTP:3, or another supported width. The
+DSpark image follows the same rule, subject to the checkpoint's block-size
+minimum (the current DeepSeek-V4-Flash-DSpark checkpoint requires 5).
+`DRAFT_SAMPLE_METHOD` defaults to `probabilistic`; temperature-zero requests
+still use vLLM's greedy fast path.
 
 The tested default exposes one 1,032,192-token request, admits up to 32
 sequences, and uses a 4,096-token batch ceiling. Lower `MAX_MODEL_LEN` or
@@ -62,14 +70,14 @@ same cache only with the same image digest and profile.
 
 The local DeepSeek-V4 compile experiment is deliberately excluded: its
 controlled marginal effect was mixed and within measurement noise. This image
-is a merge preview for supported fixes, not a bag of every attempted tuning.
+is a focused integration of supported fixes, not a bag of every attempted tuning.
 
 See [`UPSTREAM.md`](UPSTREAM.md) for the terse merge map and dependency story.
 Live status is tracked in [issue #1](https://github.com/ormandj/vllm-deepseek-v4-flash-sm120/issues/1).
 
 ## Evidence already established
 
-The sealed attribution matrix on the previous pinned vLLM main established:
+The controlled benchmark matrix on the previous pinned vLLM main established:
 
 - #48303: sustained MTP:0 decode changed by **+1.21% to +21.77%** across
   C1-C32; exact 8K/64K/128K cold prefill changed by **+1.79% to +3.92%**.
@@ -81,7 +89,7 @@ The sealed attribution matrix on the previous pinned vLLM main established:
 Those numbers remain tied to vLLM `fec64fea75103a1490e7fa0874c55a2292c110b1`.
 This repository intentionally moved every profile together to the newer pin in
 `stack.lock.json`; current-pin results will be published only after the matched
-`control`/`agentic-mtp0` images pass the same benchmark contract.
+`control`/`mtp` images pass the same benchmark settings.
 
 ## Build locally
 
@@ -89,7 +97,7 @@ The build is SM120-only and expensive. Podman is expected.
 
 ```bash
 ./scripts/verify-patches.sh
-MAX_JOBS=48 ./scripts/build.sh agentic-mtp0 local/dsv4-sm120:agentic-mtp0
+MAX_JOBS=48 ./scripts/build.sh mtp local/dsv4-sm120:mtp
 ```
 
 The image records the vLLM revision, repository revision, profile, and SHA256

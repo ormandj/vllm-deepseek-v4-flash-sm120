@@ -8,7 +8,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 git clone --filter=blob:none https://github.com/vllm-project/vllm.git "$work/vllm"
-for profile in control agentic-mtp0 dspark-preview; do
+for profile in control mtp dspark; do
   git -C "$work/vllm" worktree add --detach "$work/$profile" "$vllm_commit"
   "$repo/scripts/apply-build-profile.sh" \
     "$profile" "$work/$profile" "$repo" "$work/$profile.env"
