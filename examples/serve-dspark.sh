@@ -42,26 +42,39 @@ speculative_config=$(printf \
   '{"method":"dspark","num_speculative_tokens":%s,"draft_sample_method":"%s"}' \
   "$DSPARK_TOKENS" "$DRAFT_SAMPLE_METHOD")
 
-# DSpark drafts its block in parallel and schedules DSPARK_TOKENS query slots
-# per request. Every admitted concurrency therefore needs a graph at
-# batch * DSPARK_TOKENS. Including C32 avoids an eager fallback at saturation.
-logical_capture_sizes=(1 2 3 4 5 6 7 8 9 10 11 12 14 16 22 27 32)
-capture_factor=$DSPARK_TOKENS
+# DSpark's draft model schedules DSPARK_TOKENS query slots per request, while
+# the target verification path schedules the current token plus those draft
+# slots. Cover both batch * DSPARK_TOKENS and batch * (DSPARK_TOKENS + 1): a
+# draft-only graph list leaves target verification eager at larger batches.
+# Optimize the intended agentic surface (every C1-C8 point) and retain C16/C32
+# guardrails without spending scarce DSpark memory on every intermediate shape.
+logical_capture_sizes=(1 2 3 4 5 6 7 8 16 32)
+draft_capture_factor=$DSPARK_TOKENS
+target_capture_factor=$((DSPARK_TOKENS + 1))
 capture_sizes=()
 found_max=0
 for batch in "${logical_capture_sizes[@]}"; do
   if (( batch <= MAX_NUM_SEQS )); then
-    capture_sizes+=("$((batch * capture_factor))")
+    capture_sizes+=(
+      "$((batch * draft_capture_factor))"
+      "$((batch * target_capture_factor))"
+    )
   fi
   if (( batch == MAX_NUM_SEQS )); then
     found_max=1
   fi
 done
 if (( found_max == 0 )); then
-  capture_sizes+=("$((MAX_NUM_SEQS * capture_factor))")
+  capture_sizes+=(
+    "$((MAX_NUM_SEQS * draft_capture_factor))"
+    "$((MAX_NUM_SEQS * target_capture_factor))"
+  )
 fi
+mapfile -t capture_sizes < <(
+  printf '%s\n' "${capture_sizes[@]}" | sort -n -u
+)
 capture_sizes_csv=$(IFS=,; printf '%s' "${capture_sizes[*]}")
-max_cudagraph_capture_size=$((MAX_NUM_SEQS * capture_factor))
+max_cudagraph_capture_size=$((MAX_NUM_SEQS * target_capture_factor))
 compilation_config=$(printf \
   '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"cudagraph_capture_sizes":[%s]}' \
   "$capture_sizes_csv")
