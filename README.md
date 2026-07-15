@@ -194,6 +194,29 @@ Greedy acceptance averaged 39.42% and 1.971 accepted tokens per draft versus
 39.77% and 1.988 for probabilistic. Both modes exposed the same 7.70 GiB /
 7,676-block KV pool and passed the sequential and C8 correctness checks.
 
+### Asynchronous scheduling
+
+Disabling asynchronous scheduling did not add physical KV: both modes exposed
+7.70 GiB and 7,676 GPU blocks. It reduced throughput at every canonical
+concurrency and reduced the coding median by 6.77%, so the launcher keeps
+asynchronous scheduling enabled.
+
+| C | Async on | Async off | Async-off delta |
+|---:|---:|---:|---:|
+| 1 | 227.70 | 195.66 | -14.07% |
+| 2 | 338.89 | 308.76 | -8.89% |
+| 4 | 486.36 | 456.56 | -6.13% |
+| 8 | 719.64 | 653.91 | -9.13% |
+| 16 | 1,049.28 | 1,018.04 | -2.98% |
+| 32 | 1,458.55 | 1,419.81 | -2.66% |
+| Coding median | 280.02 | 261.06 | -6.77% |
+
+The max-context-equivalent token value increased from 1,072,719 to 1,384,674
+when async scheduling was disabled despite identical physical KV. The hybrid
+layout's per-request in-flight reservation changed; physical allocation did
+not. This is another reason not to read that value as a universal KV-token
+total.
+
 ### Scheduler batch budget
 
 At the recommended 1,032,192-token maximum context, configuring 8,192 batched
