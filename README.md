@@ -4,6 +4,14 @@ Ready-to-run vLLM images and launch scripts for **DeepSeek-V4-Flash on 2×
 NVIDIA RTX PRO 6000 Blackwell (96 GB, SM120)**. The goal is fast single-user
 agentic work with enough capacity for several simultaneous requests.
 
+This repository is also a focused integration path toward upstream support,
+not a permanent downstream fork. It makes the required vLLM and FlashInfer
+fixes usable now, measures their effect, and provides concrete evidence for
+merging them upstream. Carries are removed as upstream releases include them;
+the intended end state is that stock mainline needs no patches. See
+[What is included](#what-is-included) for the technical patch summary and
+[`UPSTREAM.md`](UPSTREAM.md) for the merge/dependency map.
+
 ## Recommended setup
 
 Use the `:mtp` image with the standard `deepseek-ai/DeepSeek-V4-Flash`
