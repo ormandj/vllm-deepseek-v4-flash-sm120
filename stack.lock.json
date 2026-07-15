@@ -2,8 +2,8 @@
   "schema": 1,
   "vllm": {
     "repository": "https://github.com/vllm-project/vllm",
-    "base_commit": "cdaa40d2a8c9297349669fc6e7db6dcb282df0b8",
-    "native_wheel_commit": "cdaa40d2a8c9297349669fc6e7db6dcb282df0b8"
+    "base_commit": "ecf4aa5ce2ccd4069f12318ca9d3fcef7c9f6257",
+    "native_wheel_commit": "ecf4aa5ce2ccd4069f12318ca9d3fcef7c9f6257"
   },
   "flashinfer": {
     "repository": "https://github.com/flashinfer-ai/flashinfer",
