@@ -45,7 +45,11 @@ if [[ -n "${BUILDX_BUILDER:-}" ]]; then
   }
   build_command=(docker buildx build --builder "$BUILDX_BUILDER")
   if [[ "${BUILDX_PUSH:-0}" == 1 ]]; then
-    output_args=(--push)
+    # This project publishes linux/amd64 only. Disable the automatic BuildKit
+    # provenance attestation so GHCR receives a directly pullable image
+    # manifest rather than an index plus an untagged platform child. The
+    # package cleanup intentionally keeps only the three canonical tags.
+    output_args=(--push --provenance=false)
   else
     output_args=(--load)
   fi
