@@ -68,6 +68,13 @@ jobs:
 
           digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" { print $2; exit }')
           test -n "$digest"
+          raw_manifest=$(mktemp)
+          docker buildx imagetools inspect --raw "$image" > "$raw_manifest"
+          if jq -e 'has("manifests")' "$raw_manifest" >/dev/null; then
+            echo "$image is an OCI index; expected a directly pullable linux/amd64 image manifest" >&2
+            exit 1
+          fi
+          jq -e '.config.digest and (.layers | length > 0)' "$raw_manifest" >/dev/null
           {
             echo "### Published image"
             echo
@@ -88,7 +95,7 @@ jobs:
                 "/users/${owner}/packages/container/${package}/versions/${id}"
             done
 
-      - name: Verify one version per canonical tag
+      - name: Verify one direct version per canonical tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
