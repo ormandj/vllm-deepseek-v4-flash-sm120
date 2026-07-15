@@ -129,11 +129,12 @@ CACHE_DIR="$HOME/.cache/vllm-deepseek-v4-flash-sm120/dspark" \
 ./examples/serve-dspark.sh
 ```
 
-The DSpark launcher defaults to DSpark:5 with probabilistic draft sampling and
-captures CUDA graphs through the required C32 shape of 160. It rejects widths
-below the checkpoint block size because those produce an unsupported draft
-layout. Its measured KV capacity and performance will be added beside the MTP
-results after the matched run completes.
+The DSpark launcher defaults to DSpark:5 with probabilistic draft sampling. It
+captures both the C32 draft shape (`32 × 5 = 160`) and target-verification shape
+(`32 × 6 = 192`). It rejects widths below the checkpoint block size because
+those produce an unsupported draft layout. Its measured KV capacity and
+performance will be added beside the MTP results after the matched run
+completes.
 
 ## Why the MTP launcher captures through 96
 
