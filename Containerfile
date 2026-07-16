@@ -1035,7 +1035,8 @@ assert find_loaded_library('libcudart') == '/tmp/libcudart-a1b2c3.so.13.0'; \
 p.stop(); print('flashinfer CUDA IPC resolver patch smoke OK')"; \
     fi && \
     uv pip check --system && \
-    apt-get purge -y patch && \
+    test -x /usr/local/cuda/bin/nvcc && \
+    test -f /usr/local/cuda/include/crt/host_config.h && \
     rm -rf /var/lib/apt/lists/* /tmp/patches-flashinfer
 
 # CUDA image changed from /usr/local/nvidia to /usr/local/cuda in 12.8 but will
