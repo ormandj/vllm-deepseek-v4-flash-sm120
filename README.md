@@ -123,6 +123,7 @@ curl http://localhost:8000/v1/chat/completions \
 | `:mtp` | Standard-checkpoint alternative; MTP:2 is the best tested MTP width. |
 | `:control` | Matched upstream control without the performance carries; intended for comparison, not the recommended deployment. |
 | `:deepgemm` | Thin `:control` derivative carrying DeepGEMM PR #380 for isolated SM120 MoE evaluation. |
+| `:deepgemm-stack` | `:deepgemm` plus the independent SM120 all-reduce, CUDA resolver, and KV-reporting carries; excludes #48303, #48304, #3817, and #3834. |
 
 The publishing workflow keeps one current package version for each tag and
 removes superseded versions. To use the standard checkpoint instead:
@@ -386,6 +387,16 @@ external package locked in `stack.lock.json`:
 
 ```bash
 ./scripts/build-deepgemm.sh local/dsv4-sm120:deepgemm
+```
+
+The stacked candidate keeps DeepGEMM as the MoE backend and adds the independent
+SM120 FlashInfer all-reduce, CUDA runtime resolver, and KV-capacity reporting
+carries. It intentionally excludes vLLM #48303 FlashInfer CUTLASS MoE, vLLM
+#48304 MTP draft RoPE, and FlashInfer #3817/#3834 DSpark TOPK=256 kernels:
+
+```bash
+DEEPGEMM_TARGET=deepgemm-stack \
+  ./scripts/build-deepgemm.sh local/dsv4-sm120:deepgemm-stack
 ```
 
 ## Scope

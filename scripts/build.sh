@@ -8,6 +8,10 @@ fi
 
 profile=$1
 shift
+if [[ "$profile" == deepgemm-stack ]]; then
+  echo "use DEEPGEMM_TARGET=deepgemm-stack with scripts/build-deepgemm.sh" >&2
+  exit 2
+fi
 if [[ $# -eq 0 ]]; then
   images=("ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:$profile")
 else
@@ -42,7 +46,7 @@ if [[ -n "${BUILDX_BUILDER:-}" ]]; then
     # This project publishes linux/amd64 only. Disable the automatic BuildKit
     # provenance attestation so GHCR receives a directly pullable image
     # manifest rather than an index plus an untagged platform child. The
-    # package cleanup intentionally keeps only the three canonical tags.
+    # Package cleanup intentionally keeps only the canonical tags.
     output_args=(--push --provenance=false)
   else
     output_args=(--load)

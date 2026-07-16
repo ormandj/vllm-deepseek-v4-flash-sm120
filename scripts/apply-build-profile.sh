@@ -20,6 +20,16 @@ common_vllm_patches=(
 case "$profile" in
   control)
     ;;
+  deepgemm-stack)
+    vllm_patches=(
+      vllm-sm12x-flashinfer-allreduce-selector.patch
+      vllm-48317-kv-capacity-reporting.patch
+    )
+    flashinfer_patches=(
+      fi-3903-sm12x-allreduce.patch
+      fi-3930-cuda-runtime-resolver.patch
+    )
+    ;;
   mtp)
     vllm_patches=(
       vllm-48303-mxfp4-flashinfer-cutlass.patch

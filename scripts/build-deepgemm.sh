@@ -2,8 +2,16 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+target=${DEEPGEMM_TARGET:-deepgemm}
+case "$target" in
+  deepgemm | deepgemm-stack) ;;
+  *)
+    echo "unsupported DeepGEMM target: $target" >&2
+    exit 2
+    ;;
+esac
 if [[ $# -eq 0 ]]; then
-  images=("ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:deepgemm")
+  images=("ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:$target")
 else
   images=("$@")
 fi
@@ -44,7 +52,7 @@ done
 "${build_command[@]}" \
   --platform linux/amd64 \
   --file "$repo/Containerfile.deepgemm" \
-  --target deepgemm \
+  --target "$target" \
   --build-arg CONTROL_IMAGE="$control_repository@$control_digest" \
   --build-arg DEEPGEMM_REPOSITORY="$deepgemm_repository" \
   --build-arg DEEPGEMM_COMMIT="$deepgemm_commit" \

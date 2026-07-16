@@ -11,6 +11,7 @@ on:
         options:
           - control
           - deepgemm
+          - deepgemm-stack
           - mtp
           - dspark
 
@@ -103,10 +104,11 @@ jobs:
           PROFILE: ${{ inputs.profile }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY}:${PROFILE}"
-          if [[ "$PROFILE" == deepgemm ]]; then
+          if [[ "$PROFILE" == deepgemm || "$PROFILE" == deepgemm-stack ]]; then
             CONTAINER_ENGINE=docker \
             BUILDX_BUILDER=sm120-builder \
             BUILDX_PUSH=1 \
+            DEEPGEMM_TARGET="$PROFILE" \
               ./scripts/build-deepgemm.sh "$image"
           else
             CONTAINER_ENGINE=docker \
@@ -132,7 +134,7 @@ jobs:
           package=${GITHUB_REPOSITORY#*/}
           owner=${GITHUB_REPOSITORY_OWNER}
           gh api --paginate \
-            --jq '.[] | select((.metadata.container.tags | map(. == "control" or . == "deepgemm" or . == "mtp" or . == "dspark") | any) | not) | .id' \
+            --jq '.[] | select((.metadata.container.tags | map(. == "control" or . == "deepgemm" or . == "deepgemm-stack" or . == "mtp" or . == "dspark") | any) | not) | .id' \
             "/users/${owner}/packages/container/${package}/versions?per_page=100" \
             | while read -r id; do
               gh api --method DELETE \
@@ -155,7 +157,7 @@ jobs:
           test "$version_count" -eq "$tag_count"
           jq -e 'all(.[]; (.metadata.container.tags | length) == 1)' \
             "$versions" >/dev/null
-          if printf '%s\n' "$tags" | grep -Evq '^(control|deepgemm|mtp|dspark)$'; then
+          if printf '%s\n' "$tags" | grep -Evq '^(control|deepgemm|deepgemm-stack|mtp|dspark)$'; then
             echo "unexpected package tag remains" >&2
             exit 1
           fi

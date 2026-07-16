@@ -30,10 +30,46 @@ if (( ${#native_changes[@]} > 0 )); then
   exit 1
 fi
 
-for profile in control mtp dspark; do
+for name in \
+  vllm-sm12x-flashinfer-allreduce-selector.patch \
+  vllm-48317-kv-capacity-reporting.patch; do
+  filtered="$work/runtime-$name"
+  python3 "$repo/scripts/filter-patch-files.py" \
+    vllm/ "$repo/patches/vllm/$name" > "$filtered"
+  grep -q '^diff --git a/vllm/' "$filtered"
+  if grep -q '^diff --git a/tests/' "$filtered"; then
+    echo "runtime patch unexpectedly contains tests: $name" >&2
+    exit 1
+  fi
+  git -C "$work/vllm" apply --check "$filtered"
+done
+
+for profile in control deepgemm-stack mtp dspark; do
   git -C "$work/vllm" worktree add --detach "$work/$profile" "$vllm_commit"
   "$repo/scripts/apply-build-profile.sh" "$profile" "$work/$profile" "$repo"
   git -C "$work/$profile" diff --check
+done
+
+stack_worktree="$work/deepgemm-stack"
+for required in \
+  fi-3903-sm12x-allreduce.patch \
+  fi-3930-cuda-runtime-resolver.patch; do
+  [[ -f "$stack_worktree/patches-flashinfer/$required" ]]
+done
+for excluded in \
+  fi-3817-sm120-topk256-decode.patch \
+  fi-3834-sm120-topk256-prefill.patch; do
+  [[ ! -e "$stack_worktree/patches-flashinfer/$excluded" ]]
+done
+for excluded_path in \
+  vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py \
+  vllm/model_executor/layers/fused_moe/oracle/mxfp4.py \
+  vllm/models/deepseek_v4/attention.py \
+  vllm/models/deepseek_v4/common/rope.py; do
+  if git -C "$stack_worktree" diff --name-only | grep -Fxq "$excluded_path"; then
+    echo "deepgemm-stack unexpectedly changes $excluded_path" >&2
+    exit 1
+  fi
 done
 
 python3 -m pip download \

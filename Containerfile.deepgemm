@@ -59,3 +59,29 @@ RUN --mount=type=bind,source=scripts/verify-deepgemm-image.py,target=/tmp/verify
     DEEPGEMM_EXPECTED_VERSION="${DEEPGEMM_VERSION}" \
     python3 /tmp/verify-deepgemm-image.py \
     && uv pip check --system
+
+FROM deepgemm AS deepgemm-stack
+
+COPY patches/vllm/vllm-sm12x-flashinfer-allreduce-selector.patch \
+     patches/vllm/vllm-48317-kv-capacity-reporting.patch \
+     /tmp/patches-vllm/
+COPY patches/flashinfer/fi-3903-sm12x-allreduce.patch \
+     patches/flashinfer/fi-3930-cuda-runtime-resolver.patch \
+     /tmp/patches-flashinfer/
+
+RUN --mount=type=bind,source=scripts/filter-patch-files.py,target=/tmp/filter-patch-files.py,readonly \
+    SITE_PACKAGES=$(python3 -c 'import vllm; from pathlib import Path; print(Path(vllm.__file__).parent.parent)') \
+    && command -v patch \
+    && for source_patch in /tmp/patches-vllm/*.patch; do \
+        runtime_patch="/tmp/runtime-$(basename "$source_patch")"; \
+        python3 /tmp/filter-patch-files.py vllm/ "$source_patch" > "$runtime_patch" || exit 1; \
+        patch -p1 -d "$SITE_PACKAGES" --forward --no-backup-if-mismatch < "$runtime_patch" || exit 1; \
+       done \
+    && for runtime_patch in /tmp/patches-flashinfer/*.patch; do \
+        patch -p1 -d "$SITE_PACKAGES" --forward --no-backup-if-mismatch < "$runtime_patch" || exit 1; \
+       done \
+    && rm -rf /tmp/patches-vllm /tmp/patches-flashinfer /tmp/runtime-*.patch
+
+RUN --mount=type=bind,source=scripts/verify-deepgemm-stack-image.py,target=/tmp/verify-deepgemm-stack-image.py,readonly \
+    python3 /tmp/verify-deepgemm-stack-image.py \
+    && uv pip check --system

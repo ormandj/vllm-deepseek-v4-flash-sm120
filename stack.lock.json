@@ -26,6 +26,7 @@
   "profiles": {
     "control": "Newest published upstream cu130 vLLM wheel commit with matched FlashInfer packaging and no performance source carries.",
     "deepgemm": "control plus external DeepGEMM PR #380 at 0a482adcca52f5f4d83855e3ab926b53da0975b1.",
+    "deepgemm-stack": "deepgemm plus SM12x FlashInfer all-reduce, the exact CUDA resolver, and vLLM #48317; excludes vLLM #48303/#48304 and FlashInfer #3817/#3834.",
     "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
     "dspark": "mtp + #48304 + FlashInfer #3817 and #3834."
   }
