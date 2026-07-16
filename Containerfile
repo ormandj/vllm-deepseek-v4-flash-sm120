@@ -720,6 +720,9 @@ RUN CUDA_VERSION_DASH=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr '.' '-') && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends --allow-change-held-packages \
         cuda-nvcc-${CUDA_VERSION_DASH} \
+        # CUDA 13 packages the compiler's crt headers separately. DeepGEMM's
+        # host extension build and runtime NVCC JIT both include host_config.h.
+        cuda-crt-${CUDA_VERSION_DASH} \
         cuda-cudart-${CUDA_VERSION_DASH} \
         cuda-nvrtc-${CUDA_VERSION_DASH} \
         # SM120 integration: nvrtc.h headers (the -dev pkg), not just the libnvrtc.so runtime.
@@ -740,6 +743,7 @@ RUN CUDA_VERSION_DASH=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr '.' '-') && \
         libnuma-dev \
         # numactl CLI for NUMA binding at runtime
         numactl && \
+    test -f /usr/local/cuda/include/crt/host_config.h && \
     # Fixes nccl_allocator requiring nccl.h at runtime
     # https://github.com/vllm-project/vllm/blob/1336a1ea244fa8bfd7e72751cabbdb5b68a0c11a/vllm/distributed/device_communicators/pynccl_allocator.py#L22
     # NCCL packages don't use the cuda-MAJOR-MINOR naming convention,
