@@ -16,6 +16,7 @@ RUN CUDA_VERSION_DASH=$(basename "$(readlink -f /usr/local/cuda)" | cut -d- -f2 
         git \
         g++ \
         libcusparse-dev-${CUDA_VERSION_DASH} \
+        libcusolver-dev-${CUDA_VERSION_DASH} \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src/DeepGEMM
