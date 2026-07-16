@@ -12,7 +12,7 @@
   },
   "control_image": {
     "repository": "ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120",
-    "digest": "sha256:84e712928b5a64b52e02e3389d829a4bb479295e3adb5df93e28d0d211e1a3f1"
+    "digest": "sha256:90a3ca66da8c0350c432e26b43313be170456a2bee0d0b79d099e22189aee03e"
   },
   "deepgemm": {
     "repository": "https://github.com/deepseek-ai/DeepGEMM.git",
