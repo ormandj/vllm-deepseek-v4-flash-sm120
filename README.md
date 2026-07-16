@@ -363,14 +363,21 @@ for live upstream status.
 The build is SM120-only and expensive:
 
 ```bash
+./scripts/update-vllm-lock.sh
 ./scripts/verify-patches.sh
 MAX_JOBS=48 ./scripts/build.sh mtp local/dsv4-sm120:mtp
 ```
 
-The image uses the newest published ancestor native wheel after verifying that
-no native build inputs changed through the locked vLLM source commit. It then
-packages the locked Python source and selected carries around that wheel. It
-installs matched `flashinfer-python==0.6.14` and
+`update-vllm-lock.sh` fetches upstream `main`, finds its newest first-parent
+commit with a published `cu130` wheel, and pins both the vLLM source and native
+wheel to that exact commit. This is the control-update policy: do not wait for
+newer wheel-less `main`, combine newer source with an older native wheel, or
+compile vLLM's native extensions locally. A newer upstream commit enters the
+control only after its `cu130` wheel is published. Pass a vLLM checkout as the
+first argument when it is not available at `../vllm`.
+
+The image packages the locked source and selected carries around that wheel.
+It installs matched `flashinfer-python==0.6.14` and
 `flashinfer-cubin==0.6.14`; the cubin is fetched from FlashInfer's official
 index because PyPI stops at 0.6.13.
 

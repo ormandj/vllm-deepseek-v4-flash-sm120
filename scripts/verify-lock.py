@@ -12,6 +12,11 @@ vllm = lock["vllm"]
 for key in ("base_commit", "native_wheel_commit"):
     if not re.fullmatch(r"[0-9a-f]{40}", vllm[key]):
         errors.append(f"vllm {key} must be a full commit hash: {vllm[key]}")
+if vllm["base_commit"] != vllm["native_wheel_commit"]:
+    errors.append(
+        "vLLM source and native wheel commits must match; run "
+        "scripts/update-vllm-lock.sh"
+    )
 
 control_digest = lock["control_image"]["digest"]
 if not re.fullmatch(r"sha256:[0-9a-f]{64}", control_digest):

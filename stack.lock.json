@@ -2,7 +2,7 @@
   "schema": 1,
   "vllm": {
     "repository": "https://github.com/vllm-project/vllm",
-    "base_commit": "3034c8d389edaf4a131c30304eee76bb9aef5022",
+    "base_commit": "5810e884f11875b46fbae0871754d855d8891105",
     "native_wheel_commit": "5810e884f11875b46fbae0871754d855d8891105"
   },
   "flashinfer": {
@@ -24,7 +24,7 @@
     "fmt_commit": "553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28"
   },
   "profiles": {
-    "control": "Locked vLLM base with matched FlashInfer packaging and no performance source carries.",
+    "control": "Newest published upstream cu130 vLLM wheel commit with matched FlashInfer packaging and no performance source carries.",
     "deepgemm": "control plus external DeepGEMM PR #380 at 0a482adcca52f5f4d83855e3ab926b53da0975b1.",
     "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
     "dspark": "mtp + #48304 + FlashInfer #3817 and #3834."
