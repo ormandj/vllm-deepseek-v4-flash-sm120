@@ -12,6 +12,17 @@ vllm = lock["vllm"]
 for key in ("base_commit", "native_wheel_commit"):
     if not re.fullmatch(r"[0-9a-f]{40}", vllm[key]):
         errors.append(f"vllm {key} must be a full commit hash: {vllm[key]}")
+
+control_digest = lock["control_image"]["digest"]
+if not re.fullmatch(r"sha256:[0-9a-f]{64}", control_digest):
+    errors.append(f"control image digest is invalid: {control_digest}")
+
+deepgemm = lock["deepgemm"]
+for key in ("base_commit", "commit", "cutlass_commit", "fmt_commit"):
+    if not re.fullmatch(r"[0-9a-f]{40}", deepgemm[key]):
+        errors.append(f"deepgemm {key} must be a full commit hash: {deepgemm[key]}")
+if not deepgemm["version"].endswith(f"+{deepgemm['commit'][:7]}"):
+    errors.append("deepgemm version must contain the locked commit suffix")
 for path in sorted((root / "patches/vllm").glob("*.patch")):
     relative = path.relative_to(root)
     for line in path.read_text().splitlines():

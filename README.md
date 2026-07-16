@@ -121,7 +121,8 @@ curl http://localhost:8000/v1/chat/completions \
 |---|---|
 | `:dspark` | Recommended image for the DSpark checkpoint; DSpark:5 is the native tested configuration. |
 | `:mtp` | Standard-checkpoint alternative; MTP:2 is the best tested MTP width. |
-| `:control` | Matched upstream control without the source carries; intended for comparison, not the recommended deployment. |
+| `:control` | Matched upstream control without the performance carries; intended for comparison, not the recommended deployment. |
+| `:deepgemm` | Thin `:control` derivative carrying DeepGEMM PR #380 for isolated SM120 MoE evaluation. |
 
 The publishing workflow keeps one current package version for each tag and
 removes superseded versions. To use the standard checkpoint instead:
@@ -372,6 +373,13 @@ packages the locked Python source and selected carries around that wheel. It
 installs matched `flashinfer-python==0.6.14` and
 `flashinfer-cubin==0.6.14`; the cubin is fetched from FlashInfer's official
 index because PyPI stops at 0.6.13.
+
+The DeepGEMM candidate reuses the immutable control image and adds only the
+external package locked in `stack.lock.json`:
+
+```bash
+./scripts/build-deepgemm.sh local/dsv4-sm120:deepgemm
+```
 
 ## Scope
 

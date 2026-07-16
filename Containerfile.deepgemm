@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1.7
+
+ARG CONTROL_IMAGE
+
+FROM ${CONTROL_IMAGE} AS deepgemm-wheel
+
+ARG DEEPGEMM_REPOSITORY
+ARG DEEPGEMM_COMMIT
+ARG DEEPGEMM_CUTLASS_COMMIT
+ARG DEEPGEMM_FMT_COMMIT
+
+USER root
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends git g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/DeepGEMM
+RUN git init . \
+    && git remote add origin "${DEEPGEMM_REPOSITORY}" \
+    && git fetch --depth 1 origin "${DEEPGEMM_COMMIT}" \
+    && git checkout --detach "${DEEPGEMM_COMMIT}" \
+    && git submodule update --init --recursive --depth 1 \
+    && test "$(git rev-parse HEAD)" = "${DEEPGEMM_COMMIT}" \
+    && test "$(git -C third-party/cutlass rev-parse HEAD)" = "${DEEPGEMM_CUTLASS_COMMIT}" \
+    && test "$(git -C third-party/fmt rev-parse HEAD)" = "${DEEPGEMM_FMT_COMMIT}"
+
+RUN --mount=type=cache,target=/opt/uv/cache \
+    uv pip install --system wheel packaging 'setuptools>=77.0.3,<81.0.0'
+
+RUN --mount=type=cache,target=/root/.cache/torch_extensions \
+    CUDA_HOME=/usr/local/cuda \
+    DG_FORCE_BUILD=1 \
+    DG_USE_LOCAL_VERSION=1 \
+    python3 setup.py bdist_wheel --dist-dir=/wheel \
+    && test "$(find /wheel -maxdepth 1 -name 'deep_gemm-*.whl' | wc -l)" -eq 1
+
+FROM ${CONTROL_IMAGE} AS deepgemm
+
+ARG DEEPGEMM_COMMIT
+ARG DEEPGEMM_VERSION
+
+RUN --mount=type=bind,from=deepgemm-wheel,source=/wheel,target=/wheel,readonly \
+    --mount=type=cache,target=/opt/uv/cache \
+    uv pip install --system --no-deps /wheel/deep_gemm-*.whl
+
+RUN printf '__global__ void smoke() {}\n' > /tmp/deepgemm-smoke.cu \
+    && nvcc /tmp/deepgemm-smoke.cu -std=c++20 -cubin \
+          -gencode=arch=compute_120f,code=sm_120f \
+          -o /tmp/deepgemm-sm120f-smoke.cubin \
+    && rm /tmp/deepgemm-smoke.cu /tmp/deepgemm-sm120f-smoke.cubin
+
+RUN --mount=type=bind,source=scripts/verify-deepgemm-image.py,target=/tmp/verify-deepgemm-image.py,readonly \
+    DEEPGEMM_EXPECTED_COMMIT="${DEEPGEMM_COMMIT}" \
+    DEEPGEMM_EXPECTED_VERSION="${DEEPGEMM_VERSION}" \
+    python3 /tmp/verify-deepgemm-image.py \
+    && uv pip check --system

@@ -10,8 +10,22 @@
     "package_base": "flashinfer-python==0.6.14",
     "package_cubin": "flashinfer-cubin==0.6.14"
   },
+  "control_image": {
+    "repository": "ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120",
+    "digest": "sha256:84e712928b5a64b52e02e3389d829a4bb479295e3adb5df93e28d0d211e1a3f1"
+  },
+  "deepgemm": {
+    "repository": "https://github.com/deepseek-ai/DeepGEMM.git",
+    "pull_request": 380,
+    "base_commit": "a6b593d2826719dcf4892609af7b84ee23aaf32a",
+    "commit": "0a482adcca52f5f4d83855e3ab926b53da0975b1",
+    "version": "2.5.0+0a482ad",
+    "cutlass_commit": "f3fde58372d33e9a5650ba7b80fc48b3b49d40c8",
+    "fmt_commit": "553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28"
+  },
   "profiles": {
     "control": "Locked vLLM base with matched FlashInfer packaging and no performance source carries.",
+    "deepgemm": "control plus external DeepGEMM PR #380 at 0a482adcca52f5f4d83855e3ab926b53da0975b1.",
     "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
     "dspark": "mtp + #48304 + FlashInfer #3817 and #3834."
   }

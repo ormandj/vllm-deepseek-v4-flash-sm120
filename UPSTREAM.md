@@ -6,6 +6,7 @@ series.
 
 | Path | Upstream work | Why it matters | Merge ask |
 |---|---|---|---|
+| DeepGEMM SM120 decode | [DeepGEMM #380](https://github.com/deepseek-ai/DeepGEMM/pull/380) | Reduces padded grouped-GEMM I/O and adds 32x64 decode tiles for the RTX PRO 6000 Blackwell path. | Reproduce end-to-end DSv4 value, report attributable results, review, merge. |
 | FlashInfer packaging | [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) | Aligns vLLM with FlashInfer 0.6.14, required by the enabled DSv4 sparse-MLA API. This integration carries only its requirements update. | Resolve the remaining review blocker, run full CI, merge. |
 | MXFP4 MoE | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | Enables the explicitly selected FlashInfer CUTLASS backend for DeepSeek-family MXFP4 and removes gpt-oss-specific activation constants from other models. | Review, `ready` label, full CI, merge. |
 | DSpark draft semantics | [vLLM #48304](https://github.com/vllm-project/vllm/pull/48304) | Honors the checkpoint's in-range draft `compress_ratios=0` entry without violating KV arithmetic; preserves fallback behavior. | Review, `ready` label, full CI, merge. |
