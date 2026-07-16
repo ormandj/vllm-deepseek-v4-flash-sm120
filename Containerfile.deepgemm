@@ -10,8 +10,12 @@ ARG DEEPGEMM_CUTLASS_COMMIT
 ARG DEEPGEMM_FMT_COMMIT
 
 USER root
-RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends git g++ \
+RUN CUDA_VERSION_DASH=$(basename "$(readlink -f /usr/local/cuda)" | cut -d- -f2 | tr '.' '-') \
+    && apt-get update -y \
+    && apt-get install -y --no-install-recommends \
+        git \
+        g++ \
+        libcusparse-dev-${CUDA_VERSION_DASH} \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src/DeepGEMM
