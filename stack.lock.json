@@ -12,10 +12,10 @@
   },
   "control_image": {
     "repository": "ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120",
-    "digest": null,
-    "vllm_commit": null,
-    "flashinfer_base": null,
-    "flashinfer_cubin": null
+    "digest": "sha256:26f585c9fd7b9e9a3da0fd92f9c1ab065a8495bf76e9c1dcfd90a2cba52410ff",
+    "vllm_commit": "bf578e1abdffc2d25232783ff59a3132279e6bdd",
+    "flashinfer_base": "flashinfer-python==0.6.15",
+    "flashinfer_cubin": "flashinfer-cubin==0.6.15"
   },
   "deepgemm": {
     "repository": "https://github.com/deepseek-ai/DeepGEMM.git",
