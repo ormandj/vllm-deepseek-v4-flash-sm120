@@ -336,7 +336,7 @@ and carries focused fixes while they are under upstream review:
 
 | Component | Role |
 |---|---|
-| [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) requirements update | Keep the required FlashInfer 0.6.14 packages aligned with the rebuilt vLLM wheel metadata |
+| FlashInfer 0.6.15 requirements carry | Advance the merged [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) packaging baseline from 0.6.14 to the matched official 0.6.15 packages |
 | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | DeepSeek-family MXFP4 to FlashInfer CUTLASS MoE wiring |
 | [FlashInfer #3903](https://github.com/flashinfer-ai/flashinfer/pull/3903) plus the temporary vLLM selector | SM120/121 TensorRT-LLM all-reduce |
 | [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) plus the [signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Reject the reproduced CUDA-stub look-alike during runtime resolution |
@@ -378,9 +378,23 @@ control only after its `cu130` wheel is published. Pass a vLLM checkout as the
 first argument when it is not available at `../vllm`.
 
 The image packages the locked source and selected carries around that wheel.
-It installs matched `flashinfer-python==0.6.14` and
-`flashinfer-cubin==0.6.14`; the cubin is fetched from FlashInfer's official
-index because PyPI stops at 0.6.13.
+It installs matched `flashinfer-python==0.6.15` and
+`flashinfer-cubin==0.6.15`; the cubin is fetched from FlashInfer's official
+index because PyPI stops at 0.6.13. FlashInfer 0.6.15 includes the upstream
+autotuner memory-leak fix [#3687](https://github.com/flashinfer-ai/flashinfer/pull/3687)
+and its release-branch follow-up
+[#3912](https://github.com/flashinfer-ai/flashinfer/pull/3912). The later
+[#3970](https://github.com/flashinfer-ai/flashinfer/pull/3970) MLA follow-up
+landed after 0.6.15 and is intentionally not conflict-resolved into the
+released wheel; reevaluate it with the next FlashInfer release.
+
+Updating the vLLM lock invalidates the immutable control-image digest. Publish
+the new `:control` image first, inspect its direct manifest digest, and bind it
+to the locked source before building either DeepGEMM derivative:
+
+```bash
+./scripts/set-control-image-digest.sh sha256:<digest>
+```
 
 The DeepGEMM candidate reuses the immutable control image and adds only the
 external package locked in `stack.lock.json`:

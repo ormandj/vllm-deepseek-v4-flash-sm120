@@ -29,8 +29,17 @@ from pathlib import Path
 path = Path(sys.argv[1])
 commit = sys.argv[2]
 lock = json.loads(path.read_text())
+changed = (
+    lock["vllm"]["base_commit"] != commit
+    or lock["vllm"]["native_wheel_commit"] != commit
+)
 lock["vllm"]["base_commit"] = commit
 lock["vllm"]["native_wheel_commit"] = commit
+if changed:
+    lock["control_image"]["digest"] = None
+    lock["control_image"]["vllm_commit"] = None
+    lock["control_image"]["flashinfer_base"] = None
+    lock["control_image"]["flashinfer_cubin"] = None
 path.write_text(json.dumps(lock, indent=2) + "\n")
 PY
 

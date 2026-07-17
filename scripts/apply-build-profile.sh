@@ -14,7 +14,7 @@ vllm_patches=()
 flashinfer_patches=()
 
 common_vllm_patches=(
-  vllm-47669-flashinfer-0.6.14-requirements.patch
+  vllm-flashinfer-0.6.15-requirements.patch
 )
 
 case "$profile" in

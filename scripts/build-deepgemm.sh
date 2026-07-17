@@ -17,11 +17,29 @@ else
 fi
 
 read_lock() {
-  python3 -c "import json; print(json.load(open('$repo/stack.lock.json'))$1)"
+  python3 -c "import json; value=json.load(open('$repo/stack.lock.json'))$1; print('' if value is None else value)"
 }
 
 control_repository=$(read_lock '["control_image"]["repository"]')
 control_digest=$(read_lock '["control_image"]["digest"]')
+control_vllm_commit=$(read_lock '["control_image"]["vllm_commit"]')
+control_flashinfer_base=$(read_lock '["control_image"]["flashinfer_base"]')
+control_flashinfer_cubin=$(read_lock '["control_image"]["flashinfer_cubin"]')
+vllm_commit=$(read_lock '["vllm"]["base_commit"]')
+flashinfer_base=$(read_lock '["flashinfer"]["package_base"]')
+flashinfer_cubin=$(read_lock '["flashinfer"]["package_cubin"]')
+if [[ -z "$control_digest" || -z "$control_vllm_commit" || -z "$control_flashinfer_base" || -z "$control_flashinfer_cubin" ]]; then
+  echo "control image digest is pending; publish :control and run scripts/set-control-image-digest.sh" >&2
+  exit 1
+fi
+if [[ "$control_vllm_commit" != "$vllm_commit" ]]; then
+  echo "control image vLLM commit does not match the locked vLLM commit" >&2
+  exit 1
+fi
+if [[ "$control_flashinfer_base" != "$flashinfer_base" || "$control_flashinfer_cubin" != "$flashinfer_cubin" ]]; then
+  echo "control image FlashInfer packages do not match the locked packages" >&2
+  exit 1
+fi
 deepgemm_repository=$(read_lock '["deepgemm"]["repository"]')
 deepgemm_commit=$(read_lock '["deepgemm"]["commit"]')
 deepgemm_version=$(read_lock '["deepgemm"]["version"]')

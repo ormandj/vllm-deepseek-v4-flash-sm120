@@ -1,3 +1,5 @@
+# check=skip=SecretsUsedInArgOrEnv
+
 # The vLLM Dockerfile is used to construct vLLM image that can be directly used
 # to run the OpenAI compatible server.
 
@@ -256,10 +258,6 @@ COPY requirements/common.txt requirements/common.txt
 COPY requirements/cuda.txt requirements/cuda.txt
 COPY use_existing_torch.py use_existing_torch.py
 COPY pyproject.toml pyproject.toml
-# nvidia-cutlass-dsl[cu13] installs -libs-base and -libs-cu13 wheels that
-# share paths with different content. uv can extract them in either order,
-# leaving base files that break CUDA 13 CuTe DSL JIT.
-# TODO(mmangkad): Remove this after NVIDIA/cutlass#3259 is fixed.
 RUN --mount=type=cache,target=/opt/uv/cache \
     if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "12" ]; then \
         sed -i 's/^nvidia-cutlass-dsl\[cu13\]/nvidia-cutlass-dsl/' requirements/cuda.txt; \
@@ -276,13 +274,6 @@ RUN --mount=type=cache,target=/opt/uv/cache \
     else \
         uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
-    fi \
-    && if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "13" ]; then \
-        CUTLASS_DSL_VERSION=$(uv pip show --python /opt/venv/bin/python3 nvidia-cutlass-dsl 2>/dev/null | awk '/^Version:/{print $2}') && \
-        if [ -n "$CUTLASS_DSL_VERSION" ]; then \
-            uv pip install --python /opt/venv/bin/python3 --force-reinstall --no-deps \
-                "nvidia-cutlass-dsl-libs-cu13==${CUTLASS_DSL_VERSION}"; \
-        fi; \
     fi
 
 # Track PyTorch lib versions used during build and match in downstream instances.
@@ -816,46 +807,33 @@ ENV VLLM_ENABLE_CUDA_COMPATIBILITY=0
 ARG PYTORCH_CUDA_INDEX_BASE_URL
 COPY requirements/common.txt /tmp/common.txt
 COPY requirements/cuda.txt /tmp/requirements-cuda.txt
-# nvidia-cutlass-dsl[cu13] installs -libs-base and -libs-cu13 wheels that
-# share paths with different content. uv can extract them in either order,
-# leaving base files that break CUDA 13 CuTe DSL JIT.
-# TODO(mmangkad): Remove this after NVIDIA/cutlass#3259 is fixed.
-#
-# SM120 integration: require the FlashInfer Python and cubin pins to be 0.6.14.
+# SM120 integration: require the FlashInfer Python and cubin pins to be 0.6.15.
 # vLLM main since #43477 (the SM120 DSv4 enablement, 2026-06-23) calls
 # flashinfer.mla trtllm_batch_decode_sparse_mla_dsv4(..., swa_topk_lens=...),
 # an argument that ONLY exists in flashinfer >= 0.6.14 (added in
-# flashinfer/mla/_core.py; absent in 0.6.13). But requirements/cuda.txt still
-# pins 0.6.13, so the DSv4 SM120 decode path crashes at memory-profiling with
-# "trtllm_batch_decode_sparse_mla_dsv4() got an unexpected keyword argument
-# 'swa_topk_lens'" (verified vllm-c 2026-07-08). 0.6.14 released 2026-07-02 and
-# is the latest. The common build patch carries the requirements portion of
-# vLLM #47669 so the rebuilt wheel metadata and installed packages agree. The
-# assertions fail loudly when upstream changes the pins.
+# flashinfer/mla/_core.py; absent in 0.6.13). vLLM #47669 now supplies the
+# official package index and matched 0.6.14 baseline. The common build patch
+# advances that pair to 0.6.15, which retains the sparse-MLA API and includes
+# the upstream autotuner memory-leak fix plus its release-branch follow-up. The
+# assertions fail loudly when either upstream or the integration patch changes
+# the pins.
 #
-# PyPI publishes flashinfer-python 0.6.14 but stops at flashinfer-cubin 0.6.13.
-# FlashInfer's official top-level index publishes the matching 0.6.14 cubin, so
+# PyPI publishes flashinfer-python 0.6.15 but stops at flashinfer-cubin 0.6.13.
+# FlashInfer's official top-level index publishes the matching 0.6.15 cubin, so
 # add that index to the resolver and keep the installed package versions aligned.
 RUN --mount=type=cache,target=/opt/uv/cache \
     if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "12" ]; then \
         sed -i 's/^nvidia-cutlass-dsl\[cu13\]/nvidia-cutlass-dsl/' /tmp/requirements-cuda.txt; \
         sed -i 's/^humming-kernels\[cu13\]/humming-kernels[cu12]/' /tmp/requirements-cuda.txt; \
     fi && \
-    grep -q '^flashinfer-python==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.14"; exit 1; } && \
-    grep -q '^flashinfer-cubin==0.6.14' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.14"; exit 1; } && \
+    grep -q '^flashinfer-python==0.6.15' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.15"; exit 1; } && \
+    grep -q '^flashinfer-cubin==0.6.15' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.15"; exit 1; } && \
     uv pip install --system -r /tmp/requirements-cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
-    if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "13" ]; then \
-        CUTLASS_DSL_VERSION=$(uv pip show --system nvidia-cutlass-dsl 2>/dev/null | awk '/^Version:/{print $2}') && \
-        if [ -n "$CUTLASS_DSL_VERSION" ]; then \
-            uv pip install --system --force-reinstall --no-deps \
-                "nvidia-cutlass-dsl-libs-cu13==${CUTLASS_DSL_VERSION}"; \
-        fi; \
-    fi && \
     rm /tmp/requirements-cuda.txt /tmp/common.txt
 
-# SM120 integration: SKIP upstream's flashinfer-jit-cache install (upstream pins 0.6.13 here).
-# The official cu130 index contains a 0.6.14 cache, but no cu133 index is
+# SM120 integration: SKIP upstream's flashinfer-jit-cache install.
+# The official cu130 index contains a 0.6.15 cache, but no cu133 index is
 # published for this CUDA 13.3 image. Keep the cache omitted across every build
 # profile; this also ensures profiles that patch FlashInfer kernel sources use
 # the same runtime-JIT path instead of selecting a prebuilt unpatched module.
@@ -953,21 +931,8 @@ RUN --mount=type=bind,from=build,src=/tmp/ep_kernels_workspace/dist,target=/vllm
     uv pip install --system ep_kernels/dist/*.whl --verbose \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
 
-# nvidia-cutlass-dsl[cu13] installs -libs-base and -libs-cu13 wheels that
-# share paths with different content. Force -libs-cu13 last after runtime
-# dependency installs so uv cannot leave base files behind.
-# TODO(mmangkad): Remove this after NVIDIA/cutlass#3259 is fixed.
-RUN --mount=type=cache,target=/opt/uv/cache \
-    if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "13" ]; then \
-        CUTLASS_DSL_VERSION=$(uv pip show --system nvidia-cutlass-dsl 2>/dev/null | awk '/^Version:/{print $2}') && \
-        if [ -n "$CUTLASS_DSL_VERSION" ]; then \
-            uv pip install --system --force-reinstall --no-deps \
-                "nvidia-cutlass-dsl-libs-cu13==${CUTLASS_DSL_VERSION}"; \
-        fi; \
-    fi
-
 # SM120 integration: optionally carry up to three open FlashInfer PRs and one resolver
-# fix as source patches on the installed 0.6.14 wheel. The build profile stages
+# fix as source patches on the installed 0.6.15 wheel. The build profile stages
 # only its selected files from patches-flashinfer/:
 #   * fi-3817 (vedcsolution, community) — TOPK=256 decode-dsv4 instantiation
 #     for SM120 sparse MLA; unblocks DSpark draft decode.
@@ -981,7 +946,7 @@ RUN --mount=type=cache,target=/opt/uv/cache \
 #     runtime during communication-workspace initialization.
 # All are pre-rewritten to the wheel layout (git csrc/ + include/ live under
 # flashinfer/data/ when installed) and verified `patch -p1 --dry-run` clean
-# against a pristine 0.6.14 wheel; test hunks are stripped (not shipped in the
+# against a pristine 0.6.15 wheel; test hunks are stripped (not shipped in the
 # wheel). The patched .cu/.cuh sources take effect via FlashInfer's runtime JIT
 # (this image builds
 # kernels on first use; no prebuilt cubins are involved). Conditional smoke
@@ -1129,10 +1094,10 @@ RUN --mount=type=cache,target=/opt/uv/cache \
     uv pip install --system -e tests/vllm_test_utils
 
 # enable fast downloads from hf (for testing)
-ENV HF_XET_HIGH_PERFORMANCE 1
+ENV HF_XET_HIGH_PERFORMANCE=1
 
 # increase timeout for hf downloads (for testing)
-ENV HF_HUB_DOWNLOAD_TIMEOUT 60
+ENV HF_HUB_DOWNLOAD_TIMEOUT=60
 
 # Copy in the v1 package for testing (it isn't distributed yet)
 COPY vllm/v1 /usr/local/lib/python${PYTHON_VERSION}/dist-packages/vllm/v1
@@ -1209,7 +1174,7 @@ RUN if [ "$INSTALL_KV_CONNECTORS" = "true" ]; then \
         fi; \
     fi
 
-ENV VLLM_USAGE_SOURCE production-docker-image
+ENV VLLM_USAGE_SOURCE=production-docker-image
 
 # define sagemaker first, so it is not default from `docker build`
 FROM vllm-openai-base AS vllm-sagemaker
