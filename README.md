@@ -42,10 +42,11 @@ This pulls `ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120:dspark` and starts an
 OpenAI-compatible endpoint on port 8000. DSpark:5, probabilistic draft sampling,
 TP=2, FP8 KV, and the measured CUDA-graph shapes are already set.
 
-The first start on an empty cache took about 17 minutes on the tested system
-because SM120 kernels and CUDA graphs must be compiled. Keep `CACHE_DIR`
-persistent; later starts reuse it. The server is ready when the log says
-`Application startup complete`.
+The validated July 18 image took about 23 minutes from container start to
+application startup on an empty cache; engine initialization accounted for
+1,124.83 seconds because SM120 kernels and CUDA graphs must be compiled. Keep
+`CACHE_DIR` persistent; later starts reuse it. The server is ready when the log
+says `Application startup complete`.
 
 ### Expected capacity
 
