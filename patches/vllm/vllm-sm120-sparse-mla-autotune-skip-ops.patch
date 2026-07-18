@@ -1,0 +1,91 @@
+diff --git a/tests/model_executor/warmup/test_flashinfer_sparse_mla_warmup.py b/tests/model_executor/warmup/test_flashinfer_sparse_mla_warmup.py
+new file mode 100644
+index 000000000..2f9947f56
+--- /dev/null
++++ b/tests/model_executor/warmup/test_flashinfer_sparse_mla_warmup.py
+@@ -0,0 +1,22 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++from pathlib import Path
++
++import vllm.envs as envs
++from vllm.model_executor.warmup.flashinfer_sparse_mla_warmup import (
++    _flashinfer_sparse_mla_autotune_kwargs,
++)
++
++
++def test_sparse_mla_autotune_forwards_skip_ops(monkeypatch) -> None:
++    skip_ops = ["trtllm::fused_moe::gemm1", "trtllm::fused_moe::gemm2"]
++    monkeypatch.setattr(envs, "VLLM_FLASHINFER_AUTOTUNE_SKIP_OPS", skip_ops)
++
++    kwargs = _flashinfer_sparse_mla_autotune_kwargs(Path("/tmp/cache.json"))
++
++    assert kwargs == {
++        "tune_mode": True,
++        "cache": "/tmp/cache.json",
++        "skip_ops": set(skip_ops),
++    }
+diff --git a/vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py b/vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py
+index 80dfd5199..a32e9cce3 100644
+--- a/vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py
++++ b/vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py
+@@ -2,10 +2,12 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ """Warmup and autotune helpers for FlashInfer sparse MLA backends."""
+ 
++from pathlib import Path
+ from typing import TYPE_CHECKING, cast
+ 
+ import torch
+ 
++import vllm.envs as envs
+ from vllm.logger import init_logger
+ from vllm.model_executor.warmup.flashinfer_autotune_cache import (
+     resolve_flashinfer_autotune_file,
+@@ -82,6 +84,23 @@ def _uses_v2_model_runner(runner: "GPUModelRunner") -> bool:
+     return bool(getattr(vllm_config, "use_v2_model_runner", False))
+ 
+ 
++def _flashinfer_sparse_mla_autotune_kwargs(
++    cache_path: Path,
++) -> dict[str, object]:
++    autotune_kwargs: dict[str, object] = {
++        "tune_mode": True,
++        "cache": str(cache_path),
++    }
++    skip_ops = envs.VLLM_FLASHINFER_AUTOTUNE_SKIP_OPS
++    if skip_ops:
++        logger.info(
++            "Skipping FlashInfer autotuning for ops %s",
++            sorted(skip_ops),
++        )
++        autotune_kwargs["skip_ops"] = set(skip_ops)
++    return autotune_kwargs
++
++
+ def _run_flashinfer_sparse_mla_decode_autotune(
+     worker: "Worker",
+     num_tokens: int,
+@@ -111,6 +130,7 @@ def _run_flashinfer_sparse_mla_decode_autotune(
+     world = get_world_group()
+     is_leader = world.rank_in_group == 0
+     cache_path = resolve_flashinfer_autotune_file(runner)
++    autotune_kwargs = _flashinfer_sparse_mla_autotune_kwargs(cache_path)
+ 
+     dummy_run_kwargs = dict(
+         num_tokens=num_tokens,
+@@ -137,11 +157,11 @@ def _run_flashinfer_sparse_mla_decode_autotune(
+                     worker.execute_model,
+                     worker.sample_tokens,
+                     num_tokens,
+-                    mixed_step_context=flashinfer_autotune(True, cache=str(cache_path)),
++                    mixed_step_context=flashinfer_autotune(**autotune_kwargs),
+                     req_id_prefix="_sparse_mla_v2_warmup",
+                 )
+             else:
+-                with flashinfer_autotune(True, cache=str(cache_path)):
++                with flashinfer_autotune(**autotune_kwargs):
+                     runner._dummy_run(**dummy_run_kwargs)
+         else:
+             if _uses_v2_model_runner(runner) and runner.max_num_reqs >= 2:
