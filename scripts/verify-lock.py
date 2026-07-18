@@ -18,6 +18,54 @@ if vllm["base_commit"] != vllm["native_wheel_commit"]:
         "scripts/update-vllm-lock.sh"
     )
 
+flashinfer = lock["flashinfer"]
+if not re.fullmatch(r"[0-9a-f]{40}", flashinfer["release_commit"]):
+    errors.append(
+        "flashinfer release_commit must be a full commit hash: "
+        f"{flashinfer['release_commit']}"
+    )
+nightly_match = re.fullmatch(
+    r"nightly-v0\.6\.15-(\d{8})", flashinfer["release_tag"]
+)
+if not nightly_match:
+    errors.append(
+        "flashinfer release_tag must name an exact 0.6.15 nightly: "
+        f"{flashinfer['release_tag']}"
+    )
+else:
+    nightly_date = nightly_match.group(1)
+    expected_base = f"flashinfer-python==0.6.15.dev{nightly_date}"
+    expected_cubin = f"flashinfer-cubin==0.6.15.dev{nightly_date}"
+    if flashinfer["package_base"] != expected_base:
+        errors.append(
+            "flashinfer package_base does not match release_tag: "
+            f"{flashinfer['package_base']}"
+        )
+    if flashinfer["package_cubin"] != expected_cubin:
+        errors.append(
+            "flashinfer package_cubin does not match release_tag: "
+            f"{flashinfer['package_cubin']}"
+        )
+if flashinfer["index_url"] != "https://flashinfer.ai/whl/nightly/":
+    errors.append(
+        "flashinfer index_url must be the official nightly index: "
+        f"{flashinfer['index_url']}"
+    )
+requirements_patch = (
+    root
+    / "patches/vllm/vllm-flashinfer-0.6.15-nightly-requirements.patch"
+).read_text()
+for expected_line in (
+    f"+--extra-index-url {flashinfer['index_url']}",
+    f"+{flashinfer['package_base']}",
+    f"+{flashinfer['package_cubin']}",
+):
+    if expected_line not in requirements_patch.splitlines():
+        errors.append(
+            "FlashInfer requirements patch does not match stack.lock.json: "
+            f"{expected_line}"
+        )
+
 control_image = lock["control_image"]
 control_digest = control_image["digest"]
 control_vllm_commit = control_image.get("vllm_commit")

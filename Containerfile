@@ -807,40 +807,40 @@ ENV VLLM_ENABLE_CUDA_COMPATIBILITY=0
 ARG PYTORCH_CUDA_INDEX_BASE_URL
 COPY requirements/common.txt /tmp/common.txt
 COPY requirements/cuda.txt /tmp/requirements-cuda.txt
-# SM120 integration: require the FlashInfer Python and cubin pins to be 0.6.15.
+# SM120 integration: require the exact July 18 FlashInfer nightly Python and
+# cubin pins.
 # vLLM main since #43477 (the SM120 DSv4 enablement, 2026-06-23) calls
 # flashinfer.mla trtllm_batch_decode_sparse_mla_dsv4(..., swa_topk_lens=...),
 # an argument that ONLY exists in flashinfer >= 0.6.14 (added in
 # flashinfer/mla/_core.py; absent in 0.6.13). vLLM #47669 now supplies the
 # official package index and matched 0.6.14 baseline. The common build patch
-# advances that pair to 0.6.15, which retains the sparse-MLA API and includes
-# the upstream autotuner memory-leak fix plus its release-branch follow-up. The
-# assertions fail loudly when either upstream or the integration patch changes
-# the pins.
+# advances that pair to nightly-v0.6.15-20260718 at FlashInfer commit
+# 82784bb112c32bb38e4d7ee171eab4855ad4f91a. This exact snapshot retains the
+# sparse-MLA API and includes merged #3948 top-N mm_fp4 autotuning plus #3970's
+# autotuner-cache leak fix. The assertions fail loudly when either upstream or
+# the integration patch changes the pins.
 #
-# PyPI publishes flashinfer-python 0.6.15 but stops at flashinfer-cubin 0.6.13.
-# FlashInfer's official top-level index publishes the matching 0.6.15 cubin, so
-# add that index to the resolver and keep the installed package versions aligned.
+# Resolve both exact dated packages from FlashInfer's official nightly index.
 RUN --mount=type=cache,target=/opt/uv/cache \
     if [ "$(echo $CUDA_VERSION | cut -d. -f1)" = "12" ]; then \
         sed -i 's/^nvidia-cutlass-dsl\[cu13\]/nvidia-cutlass-dsl/' /tmp/requirements-cuda.txt; \
         sed -i 's/^humming-kernels\[cu13\]/humming-kernels[cu12]/' /tmp/requirements-cuda.txt; \
     fi && \
-    grep -q '^flashinfer-python==0.6.15' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not 0.6.15"; exit 1; } && \
-    grep -q '^flashinfer-cubin==0.6.15' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not 0.6.15"; exit 1; } && \
+    grep -q '^flashinfer-python==0.6.15.dev20260718' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-python pin is not the July 18 nightly"; exit 1; } && \
+    grep -q '^flashinfer-cubin==0.6.15.dev20260718' /tmp/requirements-cuda.txt || { echo "FATAL: flashinfer-cubin pin is not the July 18 nightly"; exit 1; } && \
     uv pip install --system -r /tmp/requirements-cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
     rm /tmp/requirements-cuda.txt /tmp/common.txt
 
 # SM120 integration: SKIP upstream's flashinfer-jit-cache install.
-# The official cu130 index contains a 0.6.15 cache, but no cu133 index is
-# published for this CUDA 13.3 image. Keep the cache omitted across every build
-# profile; this also ensures profiles that patch FlashInfer kernel sources use
-# the same runtime-JIT path instead of selecting a prebuilt unpatched module.
+# The nightly release includes a cu130 JIT-cache wheel, but the profiles below
+# patch FlashInfer kernel sources. Keep the cache omitted across every build
+# profile so those sources compile through the same runtime-JIT path rather
+# than selecting a prebuilt unpatched module.
 # Runtime JIT is restricted to sm_120 via
 # `ENV FLASHINFER_CUDA_ARCH_LIST=12.0f` (set below); kernels compile on first
 # use and are cached to disk thereafter. The Python and cubin packages remain
-# version-matched; the cubin is resolved from FlashInfer's official index.
+# version-matched and come from FlashInfer's official nightly index.
 # https://docs.flashinfer.ai/installation.html
 
 # ============================================================
@@ -932,8 +932,8 @@ RUN --mount=type=bind,from=build,src=/tmp/ep_kernels_workspace/dist,target=/vllm
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
 
 # SM120 integration: optionally carry up to three open FlashInfer PRs and one resolver
-# fix as source patches on the installed 0.6.15 wheel. The build profile stages
-# only its selected files from patches-flashinfer/:
+# fix as source patches on the installed July 18 nightly wheel. The build
+# profile stages only its selected files from patches-flashinfer/:
 #   * fi-3817 (vedcsolution, community) — TOPK=256 decode-dsv4 instantiation
 #     for SM120 sparse MLA; unblocks DSpark draft decode.
 #   * fi-3834 (waynehacking8) — TOPK=256 prefill-dsv4 instantiation for SM120
@@ -946,10 +946,10 @@ RUN --mount=type=bind,from=build,src=/tmp/ep_kernels_workspace/dist,target=/vllm
 #     runtime during communication-workspace initialization.
 # All are pre-rewritten to the wheel layout (git csrc/ + include/ live under
 # flashinfer/data/ when installed) and verified `patch -p1 --dry-run` clean
-# against a pristine 0.6.15 wheel; test hunks are stripped (not shipped in the
-# wheel). The patched .cu/.cuh sources take effect via FlashInfer's runtime JIT
-# (this image builds
-# kernels on first use; no prebuilt cubins are involved). Conditional smoke
+# against the pristine 0.6.15.dev20260718 wheel; test hunks are stripped (not
+# shipped in the wheel). The patched .cu/.cuh sources take effect via
+# FlashInfer's runtime JIT (this image builds kernels on first use; no prebuilt
+# JIT-cache modules are involved). Conditional smoke
 # tests fail the build if a selected Python-visible patch silently regresses:
 # topk-256 decode
 # dispatch entries (fi-3817), the SM12x JIT target and cluster-size helper

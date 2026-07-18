@@ -6,6 +6,7 @@ vllm_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack
 native_wheel_commit=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["vllm"]["native_wheel_commit"])')
 flashinfer_base=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["flashinfer"]["package_base"])')
 flashinfer_cubin=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["flashinfer"]["package_cubin"])')
+flashinfer_index=$(cd "$repo" && python3 -c 'import json; print(json.load(open("stack.lock.json"))["flashinfer"]["index_url"])')
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -74,7 +75,7 @@ done
 
 python3 -m pip download \
   --dest "$work/wheel" \
-  --index-url https://flashinfer.ai/whl \
+  --index-url "$flashinfer_index" \
   --platform manylinux_2_28_x86_64 \
   --python-version 312 \
   --only-binary=:all: \

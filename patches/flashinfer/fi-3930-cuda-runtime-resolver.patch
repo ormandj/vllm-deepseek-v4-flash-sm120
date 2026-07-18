@@ -6,11 +6,11 @@
 # hexadecimal libcudart-<hash>.so[.N...] name. It rejects TileLang stubs,
 # arbitrary hyphen/underscore/dotted names, empty hashes, and path lookalikes.
 #
-# This diff applies cleanly to flashinfer-python 0.6.14 and produces the exact
-# cuda_ipc.py blob from the signed follow-up commit. The focused CPU test file
-# passed 12/12 under isolated uv Python 3.12; the full FlashInfer pre-commit
-# suite passed. Drop this carry when a FlashInfer release contains the final
-# resolver fix.
+# This diff applies cleanly to flashinfer-python 0.6.15.dev20260718 and produces
+# the exact cuda_ipc.py blob from the signed follow-up commit. The focused CPU
+# test file passed 12/12 under isolated uv Python 3.12; the full FlashInfer
+# pre-commit suite passed. Drop this carry when a FlashInfer release contains
+# the final resolver fix.
 diff --git a/flashinfer/comm/cuda_ipc.py b/flashinfer/comm/cuda_ipc.py
 index bdc8310c432bd0338d47ed682dc7648602b9ec4c..a29085ce500ea4d114cdd44094d5b558908cf9f3 100644
 --- a/flashinfer/comm/cuda_ipc.py

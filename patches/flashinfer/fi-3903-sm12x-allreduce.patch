@@ -1,7 +1,8 @@
 # fi-3903-sm12x-allreduce.patch
 #
 # flashinfer-ai/flashinfer PR #3903 (yichengj0, NVIDIA), head d3a00179,
-# fetched 2026-07-13 and applied to the flashinfer-python 0.6.14 wheel layout.
+# fetched 2026-07-13 and validated against the
+# flashinfer-python 0.6.15.dev20260718 wheel layout.
 # Extends the TensorRT-LLM allreduce paths to SM120/SM121 and corrects the
 # legacy Lamport peer-buffer pointer packing.
 #
