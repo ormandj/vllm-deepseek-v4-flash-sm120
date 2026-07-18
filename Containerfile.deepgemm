@@ -48,6 +48,15 @@ RUN --mount=type=bind,from=deepgemm-wheel,source=/wheel,target=/wheel,readonly \
     --mount=type=cache,target=/opt/uv/cache \
     uv pip install --system --no-deps /wheel/deep_gemm-*.whl
 
+COPY patches/vllm/vllm-49059-sm120-empty-prefill.patch /tmp/vllm-49059.patch
+RUN --mount=type=bind,source=scripts/filter-patch-files.py,target=/tmp/filter-patch-files.py,readonly \
+    SITE_PACKAGES=$(python3 -c 'import vllm; from pathlib import Path; print(Path(vllm.__file__).parent.parent)') \
+    && python3 /tmp/filter-patch-files.py \
+         vllm/ /tmp/vllm-49059.patch > /tmp/vllm-49059-runtime.patch \
+    && patch -p1 -d "$SITE_PACKAGES" \
+         --forward --no-backup-if-mismatch < /tmp/vllm-49059-runtime.patch \
+    && rm /tmp/vllm-49059.patch /tmp/vllm-49059-runtime.patch
+
 RUN printf '__global__ void smoke() {}\n' > /tmp/deepgemm-smoke.cu \
     && nvcc /tmp/deepgemm-smoke.cu -std=c++20 -cubin \
           -gencode=arch=compute_120f,code=sm_120f \

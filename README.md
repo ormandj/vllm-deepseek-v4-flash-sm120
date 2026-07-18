@@ -123,7 +123,7 @@ curl http://localhost:8000/v1/chat/completions \
 | `:dspark` | Recommended image for the DSpark checkpoint; DSpark:5 is the native tested configuration. |
 | `:mtp` | Standard-checkpoint alternative; MTP:2 is the best tested MTP width. |
 | `:control` | Matched upstream control without the performance carries; intended for comparison, not the recommended deployment. |
-| `:deepgemm` | Thin `:control` derivative carrying DeepGEMM PR #380 for isolated SM120 MoE evaluation. |
+| `:deepgemm` | Thin `:control` derivative carrying vLLM #49059 and DeepGEMM PR #380 for isolated SM120 MoE evaluation. |
 | `:deepgemm-stack` | `:deepgemm` plus the independent SM120 all-reduce, CUDA resolver, and KV-reporting carries; excludes #48303, #48304, #3817, and #3834. |
 
 The publishing workflow keeps one current package version for each tag and
@@ -337,6 +337,7 @@ and carries focused fixes while they are under upstream review:
 
 | Component | Role |
 |---|---|
+| [vLLM #49059](https://github.com/vllm-project/vllm/pull/49059) | Skip CUDA-graph padding chunks with no query tokens before calling FlashInfer sparse MLA |
 | FlashInfer July 18 nightly requirements carry | Advance the merged [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) packaging baseline from 0.6.14 to the exact `nightly-v0.6.15-20260718` packages |
 | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | DeepSeek-family MXFP4 to FlashInfer CUTLASS MoE wiring |
 | [FlashInfer #3903](https://github.com/flashinfer-ai/flashinfer/pull/3903) plus the temporary vLLM selector | SM120/121 TensorRT-LLM all-reduce |
@@ -353,6 +354,8 @@ for live upstream status.
 ## Operational notes
 
 - Reuse a cache directory only with the same image digest and profile.
+- vLLM #49059 prevents a full-CUDA-graph padding chunk from reaching
+  FlashInfer sparse MLA with a zero-token query.
 - The DSpark launcher leaves sparse-MLA autotuning enabled but excludes
   FlashInfer's SM120 fused-MoE `gemm1` and `gemm2` profilers. The July 18
   nightly can poison the CUDA context while profiling that MXFP4/MXFP8 path;

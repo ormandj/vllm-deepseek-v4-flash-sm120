@@ -31,9 +31,9 @@
   },
   "profiles": {
     "control": "Newest published upstream cu130 vLLM wheel commit with the exact July 18 FlashInfer nightly and no performance source carries.",
-    "deepgemm": "control plus external DeepGEMM PR #380 at 0a482adcca52f5f4d83855e3ab926b53da0975b1.",
+    "deepgemm": "control plus vLLM #49059 and external DeepGEMM PR #380 at 0a482adcca52f5f4d83855e3ab926b53da0975b1.",
     "deepgemm-stack": "deepgemm plus SM12x FlashInfer all-reduce, the exact CUDA resolver, and vLLM #48317; excludes vLLM #48303/#48304 and FlashInfer #3817/#3834.",
-    "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
+    "mtp": "#49059 + #48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",
     "dspark": "mtp + #48304 + FlashInfer #3817 and #3834."
   }
 }

@@ -6,6 +6,7 @@ series.
 
 | Path | Upstream work | Why it matters | Merge ask |
 |---|---|---|---|
+| Empty SM120 sparse-MLA prefill chunks | [vLLM #49059](https://github.com/vllm-project/vllm/pull/49059) | Full CUDA-graph padding can produce all-padding request chunks. Skipping those chunks avoids calling FlashInfer with a zero-token query and crashing the engine. | Human review, GPU end-to-end confirmation, `ready` label, full CI, merge. |
 | DeepGEMM SM120 decode | [DeepGEMM #380](https://github.com/deepseek-ai/DeepGEMM/pull/380) | Reduces padded grouped-GEMM I/O and adds 32x64 decode tiles for the RTX PRO 6000 Blackwell path. | Keep experimental: its exact head loses the matched end-to-end serving matrix to FlashInfer CUTLASS and still errors on a valid small-N shape instead of falling back. |
 | FlashInfer packaging | Merged [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) plus the exact July 18 nightly carry | #47669 supplies the official package index and matched 0.6.14 baseline. This integration advances to `nightly-v0.6.15-20260718`, gaining merged #3948 and #3970 while retaining the required sparse-MLA API. | Drop the version carry when vLLM pins this snapshot or a newer compatible FlashInfer release. |
 | MXFP4 MoE | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | Enables the explicitly selected FlashInfer CUTLASS backend for DeepSeek-family MXFP4 and removes gpt-oss-specific activation constants from other models. | Review, `ready` label, full CI, merge. |
@@ -27,7 +28,9 @@ series.
 5. The temporary vLLM SM12x all-reduce selector in this repository should be
    proposed only after vLLM can pin a FlashInfer release containing #3903 and
    guard the capability/version boundary.
-6. The three vLLM PRs are otherwise independent of the FlashInfer merge order.
+6. #49059 is independent of the FlashInfer merge order.
+7. The other three vLLM PRs are otherwise independent of the FlashInfer merge
+   order.
 
 ## Selected upstream snapshot
 
@@ -37,8 +40,8 @@ series.
 - FlashInfer packages are the July 18 nightly at
   `82784bb112c32bb38e4d7ee171eab4855ad4f91a`. Merged #3948 and #3970 are
   included by the package snapshot.
-- #48303, #48304, #48317, #3817, #3834, #3903, and the strengthened #3930
-  resolver are not present in those selected inputs and remain explicit,
+- #49059, #48303, #48304, #48317, #3817, #3834, #3903, and the strengthened
+  #3930 resolver are not present in those selected inputs and remain explicit,
   removable profile carries.
 - The selected vLLM parses `VLLM_FLASHINFER_AUTOTUNE_SKIP_OPS`, but its DSv4
   sparse-MLA autotune context does not forward the setting. The DSpark profile
@@ -57,6 +60,9 @@ series.
 - #48317 is reporting/accounting evidence, not a performance claim.
 - #48304's acceptance figures are the same-configuration ablation reported on
   that PR.
+- #49059 has a focused CPU regression test and was prompted by a live SM120
+  engine crash. End-to-end confirmation is required before the PR is marked
+  ready.
 
 The public images make the combined integration easy to reproduce. They do not
 replace the narrower evidence already attached to each upstream review.

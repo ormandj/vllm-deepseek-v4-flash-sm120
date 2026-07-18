@@ -1,0 +1,96 @@
+From 34020ad5db01545b4f32cff0f9866ca69b98b190 Mon Sep 17 00:00:00 2001
+From: David Orman <ormandj@corenode.com>
+Date: Sat, 18 Jul 2026 17:31:18 -0500
+Subject: [PATCH] fix: skip empty SM120 sparse MLA prefill chunks
+
+Co-authored-by: OpenAI Codex <codex@openai.com>
+Signed-off-by: David Orman <ormandj@corenode.com>
+---
+ .../kernels/attention/test_flashmla_sparse.py | 52 +++++++++++++++++++
+ .../deepseek_v4/nvidia/flashinfer_sparse.py   |  2 +
+ 2 files changed, 54 insertions(+)
+
+diff --git a/tests/kernels/attention/test_flashmla_sparse.py b/tests/kernels/attention/test_flashmla_sparse.py
+index 010c4479766..f4a9478abcd 100644
+--- a/tests/kernels/attention/test_flashmla_sparse.py
++++ b/tests/kernels/attention/test_flashmla_sparse.py
+@@ -1,5 +1,7 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++from types import SimpleNamespace
++
+ import pytest
+ import torch
+ 
+@@ -145,6 +147,56 @@ def test_deepseek_v4_prefill_chunk_planning_expands_for_short_sequences():
+     assert chunk_plan == [(0, 5, 36, 103)]
+ 
+ 
++@pytest.mark.skip_global_cleanup
++def test_flashinfer_sparse_prefill_skips_cudagraph_padding_chunks(monkeypatch):
++    from vllm.models.deepseek_v4.nvidia import flashinfer_sparse as flashinfer_mod
++    from vllm.v1.attention.backends.mla.sparse_swa import DeepseekSparseSWAMetadata
++
++    calls = []
++
++    def fake_sparse_mla(**kwargs):
++        calls.append(kwargs["query"].shape[0])
++
++    monkeypatch.setattr(
++        flashinfer_mod,
++        "flashinfer_trtllm_batch_decode_sparse_mla_dsv4",
++        fake_sparse_mla,
++    )
++
++    attn = SimpleNamespace(
++        compress_ratio=1,
++        PREFILL_CHUNK_SIZE=4,
++        scale=1.0,
++        attn_sink=None,
++        _prepare_query=lambda query, output: query,
++        _as_sparse_cache=lambda cache: cache,
++        _get_workspace=lambda device: torch.empty(0),
++    )
++    swa_metadata = DeepseekSparseSWAMetadata(
++        block_table=torch.empty(0, dtype=torch.int32),
++        slot_mapping=torch.empty(0, dtype=torch.int64),
++        block_size=64,
++        query_start_loc_cpu=torch.tensor([0, 1, 1, 1, 1, 1]),
++        prefill_swa_indices=torch.zeros((2, 1, 128), dtype=torch.int32),
++        prefill_swa_lens=torch.ones(2, dtype=torch.int32),
++        num_prefills=5,
++        num_prefill_tokens=2,
++    )
++    query = torch.zeros((2, 16, 512), dtype=torch.bfloat16)
++
++    flashinfer_mod.DeepseekV4FlashInferSM120Attention._forward_prefill(
++        attn,
++        q=query,
++        compressed_k_cache=None,
++        swa_k_cache=torch.empty((1, 64, 584), dtype=torch.uint8),
++        output=torch.empty_like(query),
++        attn_metadata=None,
++        swa_metadata=swa_metadata,
++    )
++
++    assert calls == [1]
++
++
+ def test_flashinfer_sparse_indices_cache(monkeypatch):
+     from vllm.models.deepseek_v4.nvidia import flashinfer_sparse as flashinfer_mod
+     from vllm.models.deepseek_v4.sparse_mla import DeepseekV4FlashMLAMetadata
+diff --git a/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py b/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py
+index 1848c1930db..5c8b9804898 100644
+--- a/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py
++++ b/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py
+@@ -866,6 +866,8 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
+             query_end = (
+                 query_start_loc_cpu[num_decodes + chunk_end] - prefill_token_base
+             )
++            if query_start == query_end:
++                continue
+ 
+             extra_sparse_indices_chunk = (
+                 extra_sparse_indices[query_start:query_end]
+-- 
+2.55.0
