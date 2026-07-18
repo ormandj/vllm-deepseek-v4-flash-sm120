@@ -45,6 +45,7 @@ case "$profile" in
     vllm_patches=(
       vllm-48303-mxfp4-flashinfer-cutlass.patch
       vllm-48304-mtp-draft-rope.patch
+      vllm-sm120-sparse-mla-autotune-skip-ops.patch
       vllm-sm12x-flashinfer-allreduce-selector.patch
       vllm-48317-kv-capacity-reporting.patch
     )
