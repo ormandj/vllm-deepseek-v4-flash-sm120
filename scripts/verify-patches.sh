@@ -32,6 +32,7 @@ if (( ${#native_changes[@]} > 0 )); then
 fi
 
 for name in \
+  vllm-49059-sm120-empty-prefill.patch \
   vllm-sm12x-flashinfer-allreduce-selector.patch \
   vllm-48317-kv-capacity-reporting.patch; do
   filtered="$work/runtime-$name"
@@ -72,6 +73,11 @@ for excluded_path in \
     exit 1
   fi
 done
+if ! git -C "$stack_worktree" diff --name-only |
+  grep -Fxq "vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py"; then
+  echo "deepgemm-stack is missing the SM120 empty-prefill guard" >&2
+  exit 1
+fi
 
 python3 -m pip download \
   --dest "$work/wheel" \

@@ -22,6 +22,7 @@ case "$profile" in
     ;;
   deepgemm-stack)
     vllm_patches=(
+      vllm-49059-sm120-empty-prefill.patch
       vllm-sm12x-flashinfer-allreduce-selector.patch
       vllm-48317-kv-capacity-reporting.patch
     )
@@ -32,6 +33,7 @@ case "$profile" in
     ;;
   mtp)
     vllm_patches=(
+      vllm-49059-sm120-empty-prefill.patch
       vllm-48303-mxfp4-flashinfer-cutlass.patch
       vllm-sm12x-flashinfer-allreduce-selector.patch
       vllm-48317-kv-capacity-reporting.patch
@@ -43,6 +45,7 @@ case "$profile" in
     ;;
   dspark)
     vllm_patches=(
+      vllm-49059-sm120-empty-prefill.patch
       vllm-48303-mxfp4-flashinfer-cutlass.patch
       vllm-48304-mtp-draft-rope.patch
       vllm-sm120-sparse-mla-autotune-skip-ops.patch
