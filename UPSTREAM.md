@@ -6,8 +6,8 @@ series.
 
 | Path | Upstream work | Why it matters | Merge ask |
 |---|---|---|---|
-| DeepGEMM SM120 decode | [DeepGEMM #380](https://github.com/deepseek-ai/DeepGEMM/pull/380) | Reduces padded grouped-GEMM I/O and adds 32x64 decode tiles for the RTX PRO 6000 Blackwell path. | Reproduce end-to-end DSv4 value, report attributable results, review, merge. |
-| FlashInfer packaging | Merged [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) plus the local 0.6.15 version carry | #47669 supplies the official package index and matched 0.6.14 baseline. This integration advances only the package pair to 0.6.15 for its autotuner leak fixes while retaining the required sparse-MLA API. | Drop the version carry when vLLM pins FlashInfer 0.6.15 or newer. |
+| DeepGEMM SM120 decode | [DeepGEMM #380](https://github.com/deepseek-ai/DeepGEMM/pull/380) | Reduces padded grouped-GEMM I/O and adds 32x64 decode tiles for the RTX PRO 6000 Blackwell path. | Keep experimental: its exact head loses the matched end-to-end serving matrix to FlashInfer CUTLASS and still errors on a valid small-N shape instead of falling back. |
+| FlashInfer packaging | Merged [vLLM #47669](https://github.com/vllm-project/vllm/pull/47669) plus the exact July 18 nightly carry | #47669 supplies the official package index and matched 0.6.14 baseline. This integration advances to `nightly-v0.6.15-20260718`, gaining merged #3948 and #3970 while retaining the required sparse-MLA API. | Drop the version carry when vLLM pins this snapshot or a newer compatible FlashInfer release. |
 | MXFP4 MoE | [vLLM #48303](https://github.com/vllm-project/vllm/pull/48303) | Enables the explicitly selected FlashInfer CUTLASS backend for DeepSeek-family MXFP4 and removes gpt-oss-specific activation constants from other models. | Review, `ready` label, full CI, merge. |
 | DSpark draft semantics | [vLLM #48304](https://github.com/vllm-project/vllm/pull/48304) | Honors the checkpoint's in-range draft `compress_ratios=0` entry without violating KV arithmetic; preserves fallback behavior. | Review, `ready` label, full CI, merge. |
 | KV reporting | [vLLM #48317](https://github.com/vllm-project/vllm/pull/48317) | Makes packed/hybrid capacity reporting agree across worker and scheduler shapes. Request execution is unchanged. | Review, `ready` label, full CI, merge. |
@@ -27,6 +27,18 @@ series.
    proposed only after vLLM can pin a FlashInfer release containing #3903 and
    guard the capability/version boundary.
 6. The three vLLM PRs are otherwise independent of the FlashInfer merge order.
+
+## Selected upstream snapshot
+
+- vLLM source and cu130 native wheel are both
+  `c233d90aa826df072872df47b201450059be8e71`. Merged #48660, #48641, and
+  #48012 are therefore upstream inputs, not local carries.
+- FlashInfer packages are the July 18 nightly at
+  `82784bb112c32bb38e4d7ee171eab4855ad4f91a`. Merged #3948 and #3970 are
+  included by the package snapshot.
+- #48303, #48304, #48317, #3817, #3834, #3903, and the strengthened #3930
+  resolver are not present in those selected inputs and remain explicit,
+  removable profile carries.
 
 ## Objective evidence
 

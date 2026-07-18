@@ -5,7 +5,7 @@
 # SM121, but vLLM leaves its FlashInfer communicator disabled on capabilities
 # absent from these threshold tables.
 #
-# Validated against locked vLLM commit bf578e1abdffc2d25232783ff59a3132279e6bdd.
+# Validated against locked vLLM commit c233d90aa826df072872df47b201450059be8e71.
 # Upstream status: no existing vLLM PR found as of 2026-07-13. Prepare a small
 # companion PR after the same-hardware serving A/B and adversarial review.
 #

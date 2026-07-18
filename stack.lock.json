@@ -2,20 +2,23 @@
   "schema": 1,
   "vllm": {
     "repository": "https://github.com/vllm-project/vllm",
-    "base_commit": "bf578e1abdffc2d25232783ff59a3132279e6bdd",
-    "native_wheel_commit": "bf578e1abdffc2d25232783ff59a3132279e6bdd"
+    "base_commit": "c233d90aa826df072872df47b201450059be8e71",
+    "native_wheel_commit": "c233d90aa826df072872df47b201450059be8e71"
   },
   "flashinfer": {
     "repository": "https://github.com/flashinfer-ai/flashinfer",
-    "package_base": "flashinfer-python==0.6.15",
-    "package_cubin": "flashinfer-cubin==0.6.15"
+    "release_tag": "nightly-v0.6.15-20260718",
+    "release_commit": "82784bb112c32bb38e4d7ee171eab4855ad4f91a",
+    "index_url": "https://flashinfer.ai/whl/nightly/",
+    "package_base": "flashinfer-python==0.6.15.dev20260718",
+    "package_cubin": "flashinfer-cubin==0.6.15.dev20260718"
   },
   "control_image": {
     "repository": "ghcr.io/ormandj/vllm-deepseek-v4-flash-sm120",
-    "digest": "sha256:26f585c9fd7b9e9a3da0fd92f9c1ab065a8495bf76e9c1dcfd90a2cba52410ff",
-    "vllm_commit": "bf578e1abdffc2d25232783ff59a3132279e6bdd",
-    "flashinfer_base": "flashinfer-python==0.6.15",
-    "flashinfer_cubin": "flashinfer-cubin==0.6.15"
+    "digest": null,
+    "vllm_commit": null,
+    "flashinfer_base": null,
+    "flashinfer_cubin": null
   },
   "deepgemm": {
     "repository": "https://github.com/deepseek-ai/DeepGEMM.git",
@@ -27,7 +30,7 @@
     "fmt_commit": "553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28"
   },
   "profiles": {
-    "control": "Newest published upstream cu130 vLLM wheel commit with matched FlashInfer packaging and no performance source carries.",
+    "control": "Newest published upstream cu130 vLLM wheel commit with the exact July 18 FlashInfer nightly and no performance source carries.",
     "deepgemm": "control plus external DeepGEMM PR #380 at 0a482adcca52f5f4d83855e3ab926b53da0975b1.",
     "deepgemm-stack": "deepgemm plus SM12x FlashInfer all-reduce, the exact CUDA resolver, and vLLM #48317; excludes vLLM #48303/#48304 and FlashInfer #3817/#3834.",
     "mtp": "#48303 + SM12x FlashInfer all-reduce selector + #48317 + FlashInfer #3903 + final #3930 resolver.",

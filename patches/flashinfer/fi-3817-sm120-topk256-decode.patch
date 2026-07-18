@@ -1,8 +1,9 @@
 # fi-3817-sm120-topk256-decode.patch
 #
 # flashinfer-ai/flashinfer PR #3817 ("SM120 sparse MLA: TOPK=256 decode-dsv4
-# instantiation", author vedcsolution), fetched 2026-07-09, applied to the
-# flashinfer-python 0.6.14 WHEEL layout. Unblocks DeepSeek-V4-Flash-DSpark
+# instantiation", author vedcsolution), fetched 2026-07-09, validated against
+# the flashinfer-python 0.6.15.dev20260718 WHEEL layout. Unblocks
+# DeepSeek-V4-Flash-DSpark
 # draft decode (topk=256) on sm_120.
 #
 # What it provides:
@@ -24,7 +25,7 @@
 #   * tests/attention/test_sparse_mla_sm120.py hunks STRIPPED — tests are not
 #     shipped in the wheel. Upstream keeps them ((8,256)/(16,256)/(32,256)
 #     decode-config entries).
-#   * No other changes: both remaining hunks apply clean to 0.6.14 as-is.
+#   * No other changes: both remaining hunks apply clean to the July 18 nightly.
 #
 # Trust: community-authored (vedcsolution, single-contribution account).
 # Carried after a full line-by-line review (2026-07-09): the diff contains

@@ -59,6 +59,7 @@ for tag in "${images[@]}"; do
 done
 
 "${build_command[@]}" \
+  --platform linux/amd64 \
   --file "$repo/Containerfile" \
   --target vllm-openai \
   --build-arg max_jobs="$max_jobs" \
