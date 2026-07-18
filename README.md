@@ -343,7 +343,7 @@ and carries focused fixes while they are under upstream review:
 | [vLLM #48317](https://github.com/vllm-project/vllm/pull/48317) | Correct packed/hybrid KV-capacity reporting |
 | [vLLM #48304](https://github.com/vllm-project/vllm/pull/48304) | Honor DSpark draft-layer rope semantics |
 | [FlashInfer #3817](https://github.com/flashinfer-ai/flashinfer/pull/3817) and [#3834](https://github.com/flashinfer-ai/flashinfer/pull/3834) | DSpark sparse-MLA decode/prefill instantiations on SM120 |
-| DSv4 sparse-MLA autotune blocklist wiring | Forward vLLM's existing `VLLM_FLASHINFER_AUTOTUNE_SKIP_OPS` setting into the earlier DSv4 mixed-token autotune context |
+| DSv4 sparse-MLA autotune blocklist wiring | Forward vLLM's existing `VLLM_FLASHINFER_AUTOTUNE_SKIP_OPS` setting into the earlier DSv4 mixed-token autotune context; tracks the profiler failure in [FlashInfer #4049](https://github.com/flashinfer-ai/flashinfer/issues/4049) |
 
 See [`UPSTREAM.md`](UPSTREAM.md) for the merge/dependency map and
 [issue #1](https://github.com/ormandj/vllm-deepseek-v4-flash-sm120/issues/1)
@@ -355,8 +355,9 @@ for live upstream status.
 - The DSpark launcher leaves sparse-MLA autotuning enabled but excludes
   FlashInfer's SM120 fused-MoE `gemm1` and `gemm2` profilers. The July 18
   nightly can poison the CUDA context while profiling that MXFP4/MXFP8 path;
-  inference uses FlashInfer's default tactic heuristic until the profiler is
-  fixed upstream.
+  inference uses FlashInfer's default tactic heuristic until
+  [FlashInfer #4049](https://github.com/flashinfer-ai/flashinfer/issues/4049)
+  is fixed upstream.
 - The scripts set `NCCL_P2P_LEVEL=SYS`; verify peer access before tuning.
 - If NCCL hangs at the first collective, stop and fix GPU peer access instead
   of benchmarking a degraded path.

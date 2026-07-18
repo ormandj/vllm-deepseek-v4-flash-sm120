@@ -14,7 +14,7 @@ series.
 | DSpark TOPK=256 | [FlashInfer #3817](https://github.com/flashinfer-ai/flashinfer/pull/3817) + [#3834](https://github.com/flashinfer-ai/flashinfer/pull/3834) | Adds the missing decode and prefill instantiations used by the DSpark draft. Both halves are required. | Authorized CI, review, merge both. |
 | SM12x all-reduce | [FlashInfer #3903](https://github.com/flashinfer-ai/flashinfer/pull/3903) | Adds the SM120/121 TensorRT-LLM workspace and corrects the legacy Lamport pointer layout. | Authorized CI, review, merge. |
 | CUDA runtime resolution | [FlashInfer #3930](https://github.com/flashinfer-ai/flashinfer/pull/3930) + [signed follow-up](https://github.com/ormandj/flashinfer/commit/bd6765dea271b23a579938132f8ca1b9cbf6a2a5) | Prevents a loaded `libcudart_stub.so` from being accepted as the CUDA runtime during workspace initialization. | Adopt the exact matcher/tests, run authorized CI, merge. |
-| DSv4 sparse-MLA autotune blocklist | Local vLLM companion plus a FlashInfer bug report | The specialized DSv4 mixed-token context predates the general blocklist wiring and otherwise profiles unsafe SM120 MXFP4/MXFP8 fused-MoE tactics. | Forward the existing setting in vLLM; fix or reject the invalid profiler tactics in FlashInfer, then remove the two-op exclusion. |
+| DSv4 sparse-MLA autotune blocklist | Local vLLM companion plus [FlashInfer #4049](https://github.com/flashinfer-ai/flashinfer/issues/4049) | The specialized DSv4 mixed-token context predates the general blocklist wiring and otherwise profiles unsafe SM120 MXFP4/MXFP8 fused-MoE tactics. | Forward the existing setting in vLLM; fix or reject the invalid profiler tactics in FlashInfer, then remove the two-op exclusion. |
 
 ## Dependency order
 
